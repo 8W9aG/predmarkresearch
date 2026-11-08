@@ -1,0 +1,49 @@
+# Build the strategy website from the repo and the Modal run logs, and publish it to GitHub Pages.
+# Runs after the daily Modal pass (14:00 UTC), on every push to main, and on demand.
+#
+# Needs repo secrets MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (use a token made for this), and
+# Settings > Pages > Source set to "GitHub Actions".
+name: site
+
+on:
+  schedule:
+    - cron: "30 15 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - name: Build site
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: uv run python -m predmark.site --from-modal
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

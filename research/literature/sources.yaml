@@ -1,0 +1,33 @@
+# Searches run by `predmark lit harvest`. Add a feed or query whenever a review finds a good source.
+lookback_days: 1460
+per_query: 40
+
+arxiv:
+  - 'all:"prediction market" OR all:"prediction markets"'
+  - 'all:Polymarket'
+  - 'all:Kalshi'
+  - 'all:"event contracts"'
+
+openalex:
+  - prediction markets calibration
+  - favorite longshot bias prediction market
+  - Polymarket
+  - Kalshi
+  - prediction market microstructure liquidity
+  - prediction market arbitrage
+  - market making binary event contracts
+  - LLM forecasting prediction markets
+
+semantic_scholar:
+  - prediction market efficiency Polymarket Kalshi
+  - forecasting language models prediction markets
+
+feeds:
+  - name: Kalshi News
+    url: https://news.kalshi.com/feed
+  - name: The Capital Spectator
+    url: https://www.capitalspectator.com/feed/
+  - name: Astral Codex Ten
+    url: https://www.astralcodexten.com/feed
+  - name: Overcoming Bias
+    url: https://www.overcomingbias.com/feed
