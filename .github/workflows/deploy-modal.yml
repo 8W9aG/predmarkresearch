@@ -1,0 +1,63 @@
+# Deploy deploy/modal_app.py (app predmark-strategies) to Modal when its code changes on main.
+#
+# The Modal token reaches the whole Modal workspace, including the typesafe-jev secret. So it lives
+# in the GitHub environment `modal-deploy`, not in repo secrets, and that environment allows only
+# the main branch. A workflow changed on a pull request cannot read it. Anyone who can push to main
+# can deploy. The account owner chose that on 2026-11-11, with no approval step.
+#
+# Setup: Settings > Environments > New environment `modal-deploy`. Under "Deployment branches and
+# tags", choose "Selected branches and tags" and add `main`. Add environment secrets MODAL_TOKEN_ID
+# and MODAL_TOKEN_SECRET, from a Modal token made only for this workflow.
+name: deploy-modal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - deploy/**
+      - src/predmark/**
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/deploy-modal.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never cancel a deploy halfway. A newer push waits for the one in progress.
+concurrency:
+  group: deploy-modal
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: modal-deploy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # No uv cache here: a cache written by another run must not feed the job that holds the token.
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - run: uv sync
+      - name: Deploy
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: uv run modal deploy deploy/modal_app.py

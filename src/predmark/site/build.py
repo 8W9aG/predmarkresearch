@@ -42,6 +42,51 @@ def fetch_from_modal(dest: str | Path, volume: str = VOLUME) -> list[str]:
     return copied
 
 
+def public_run_logs(state_dir: str | Path) -> dict[str, str]:
+    """Every `*.runs.jsonl` at the top of `state_dir`, by file name.
+
+    This is all the site needs, and all the Modal `run_logs` endpoint serves. Run logs hold pass
+    summaries and paper account totals, which the site publishes anyway.
+    """
+    return {
+        path.name: path.read_text()
+        for path in sorted(Path(state_dir).glob("*.runs.jsonl"))
+        if path.is_file()
+    }
+
+
+def safe_log_name(name: str) -> bool:
+    """True for a bare `<name>.runs.jsonl` file name, with no path parts."""
+    return (
+        name.endswith(".runs.jsonl")
+        and Path(name).name == name
+        and not name.startswith(".")
+        and "\\" not in name
+    )
+
+
+def fetch_from_url(dest: str | Path, url: str, timeout: float = 60) -> list[str]:
+    """Write the run logs that the Modal `run_logs` endpoint serves at `url` into `dest`.
+
+    The endpoint is public and read-only, so this needs no credential. Names that are not a bare
+    `*.runs.jsonl` file name are rejected, so a bad response cannot write outside `dest`.
+    """
+    import urllib.request
+
+    if not url.startswith("https://"):
+        raise ValueError(f"run log URL must be https: {url!r}")
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        files = json.load(response)["files"]
+    bad = [name for name in files if not safe_log_name(name)]
+    if bad:
+        raise ValueError(f"refusing run log names from {url}: {bad}")
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (dest / name).write_text(text)
+    return sorted(files)
+
+
 def load_runs(state_dir: str | Path, name: str) -> list[dict[str, Any]]:
     path = Path(state_dir) / f"{name}.runs.jsonl"
     if not path.exists():

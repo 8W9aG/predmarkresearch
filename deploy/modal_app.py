@@ -14,6 +14,9 @@ The one credential is the TypeSafe key (Modal secret `typesafe-jev`), used only 
     uv run modal run deploy/modal_app.py::run --name nothing-ever-happens   # one pass now
     uv run modal volume put predmark-paper KILL /KILL              # halt new orders everywhere
     uv run modal run deploy/modal_app.py::collect --name jev-forecasts      # one collector now
+
+`run_logs` is a public, read-only web endpoint that serves each strategy's `*.runs.jsonl`, which the
+website publishes anyway. The site workflow reads it, so GitHub holds no Modal token.
 """
 
 from __future__ import annotations
@@ -34,6 +37,12 @@ image = (
     .add_local_python_source("predmark")
 )
 common = {"image": image, "volumes": {STATE: volume}}
+web_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install_from_pyproject(str(ROOT / "pyproject.toml"))
+    .pip_install("fastapi[standard]")
+    .add_local_python_source("predmark")
+)
 jev_secret = modal.Secret.from_name("typesafe-jev")
 
 
@@ -91,3 +100,13 @@ def collect(name: str) -> dict:
         volume.commit()
     print(json.dumps(result, indent=2, default=str))
     return result
+
+
+@app.function(image=web_image, volumes={STATE: volume}, timeout=60, max_containers=2)
+@modal.fastapi_endpoint(method="GET")
+def run_logs() -> dict:
+    """Every `*.runs.jsonl` on the volume, for the website. Public, no input, read-only."""
+    from predmark.site.build import public_run_logs
+
+    volume.reload()
+    return {"files": public_run_logs(STATE)}
