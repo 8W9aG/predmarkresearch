@@ -42,8 +42,66 @@ def test_each_strategy_gets_its_own_journal_and_the_shared_kill_file(tmp_path, t
     assert out == {
         "journal": str(tmp_path / "good.sqlite"),
         "kill": str(tmp_path / "KILL"),
-        "options": {"x": 1},
+        "options": {"venue": "paper", "x": 1},
     }
+
+
+def test_demo_gets_its_own_journal(tmp_path, two):
+    out = runner.run_one("good", tmp_path, log=lambda m: None, venue="kalshi-demo")
+    assert out["journal"] == str(tmp_path / "good.kalshi-demo.sqlite")
+    assert out["options"] == {"venue": "kalshi-demo"}
+    with pytest.raises(ValueError, match="unknown venue"):
+        runner.journal_path(tmp_path, "good", "kalshi-prod")
+
+
+def test_cli_rejects_a_production_venue(tmp_path):
+    with pytest.raises(SystemExit):
+        main(["run", "nothing-ever-happens", "--venue", "prod", "--state-dir", str(tmp_path)])
+
+
+def test_open_engine_demo_uses_default_limits_and_reconciles(tmp_path, monkeypatch):
+    from predmark.execution.kalshi import KalshiVenue
+    from predmark.execution.risk import RiskLimits
+    from predmark.strategies import base
+
+    calls = []
+
+    class FakeKalshi:
+        name = "kalshi"
+
+        def fills(self, since_ts):
+            return []
+
+        def open_orders(self):
+            calls.append("open_orders")
+            return []
+
+        def positions(self):
+            return {"STRAY-1": 2}
+
+    def from_env(cls, env, subaccount):
+        calls.append((env, subaccount))
+        return FakeKalshi()
+
+    monkeypatch.setattr(KalshiVenue, "from_env", classmethod(from_env))
+    logs = []
+    with pytest.raises(ValueError, match="strategy name"):
+        base.open_engine(tmp_path / "j.sqlite", tmp_path / "KILL", "kalshi-demo", data=object())
+    engine, _ = base.open_engine(
+        tmp_path / "j.sqlite",
+        tmp_path / "KILL",
+        "kalshi-demo",
+        data=object(),
+        log=logs.append,
+        name="nothing-ever-happens",
+    )
+    assert calls.pop(0) == ("demo", 2)
+    assert engine.limits == RiskLimits()
+    assert calls == ["open_orders"]
+    assert "position mismatch on STRAY-1" in engine.halt_reason
+    assert logs and "halted" in logs[0]
+    with pytest.raises(ValueError, match="unknown venue"):
+        base.open_engine(tmp_path / "k.sqlite", tmp_path / "KILL", "prod")
 
 
 def test_one_failing_strategy_does_not_stop_the_others(tmp_path, two):

@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..execution.fees import kalshi_fee
+from ..execution.fees import KALSHI_DIRECT_INCREMENT, kalshi_fee
 from ..research.metrics import cluster_bootstrap, interval
 from .panel import to_ts
 
@@ -65,7 +65,13 @@ def entry(
 
 def fee_per_contract(price: float, multiplier: object, lot: int) -> float:
     m = Decimal(str(multiplier if multiplier is not None else 1))
-    fee = kalshi_fee(Decimal(lot), Decimal(str(round(price, 4))), True, multiplier=m)
+    fee = kalshi_fee(
+        Decimal(lot),
+        Decimal(str(round(price, 4))),
+        True,
+        multiplier=m,
+        increment=KALSHI_DIRECT_INCREMENT,
+    )
     return float(fee) / lot
 
 

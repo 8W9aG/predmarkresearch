@@ -197,11 +197,11 @@ def test_strategy_does_not_enter_a_market_twice(rig):
 
 def test_no_wins_when_market_resolves_no(rig):
     ex, venue, engine, _ = rig
-    run_pass(engine, m("A"), ex.lookup)  # receives 0.20 for selling YES, pays 0.02 fee
+    run_pass(engine, m("A"), ex.lookup)  # receives 0.20 for selling YES, pays a 0.0112 fee
     ex.results["A"] = "no"
     assert run_pass(engine, [], ex.lookup).settled == 1
-    assert engine.ledger.realized == D("0.18")
-    assert venue.balance() == D("100.18")
+    assert engine.ledger.realized == D("0.1888")
+    assert venue.balance() == D("100.1888")
     assert engine.reconcile() == []
 
 
@@ -210,8 +210,8 @@ def test_no_loses_when_market_resolves_yes(rig):
     run_pass(engine, m("A"), ex.lookup)
     ex.results["A"] = "yes"
     run_pass(engine, [], ex.lookup)
-    assert engine.ledger.realized == D("-0.82")
-    assert venue.balance() == D("99.18")
+    assert engine.ledger.realized == D("-0.8112")
+    assert venue.balance() == D("99.1888")
 
 
 def test_strategy_stops_at_the_risk_limit(rig):
