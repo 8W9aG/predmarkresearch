@@ -17,10 +17,8 @@ Prefer a deterministic check (lint, test, CI job) where one can do the job, and 
 
 Jev is used for one thing only: daily forecasts of the top markets, collected going forward for E003 (`research/experiments/E003-jev-forecast/preregistration.md`). Not for code, lint, literature review or anything else. Its training cutoff is unknown, so no backfill: only forecasts made before an outcome is known count.
 
-- [ ] Commit E003's preregistration before any of its markets settle. The collector writes its SHA-256 with every forecast, but the rules in `CLAUDE.md` need it in git.
-- [ ] Check the dev forecasts (2026-11-08 to 2026-11-21): error rate, bet rate, spend, and that every record has `model` `jev-1.14.0`.
-- [ ] Write `analyze.py` for E003 and test it on synthetic data with a planted effect, before the holdout opens on 2027-03-07.
-- [ ] Run the holdout once, on or after 2027-03-07, and write the report.
+- [ ] From 2026-11-22, check the dev forecasts (2026-11-08 to 2026-11-21): `fetch.py dev`, then `analyze.py dev`. Look at the error rate (2 errors on 2026-11-10), bet rate, spend, and that every record has `model` `jev-1.14.0`.
+- [ ] On or after 2027-03-07, run `fetch.py holdout` and `analyze.py holdout` once, and write the report. Both scripts refuse earlier dates.
 
 ## This repo's own gaps
 
