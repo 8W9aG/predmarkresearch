@@ -17,7 +17,7 @@ from importlib import import_module
 
 from .base import Collector
 
-MODULES = ("jev_forecasts",)
+MODULES = ("jev_forecasts", "kalshi_listing")
 
 
 def registry() -> dict[str, Collector]:
