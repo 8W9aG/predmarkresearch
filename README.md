@@ -36,10 +36,30 @@ uv run python -m predmark.lit harvest        # arXiv, OpenAlex, Semantic Scholar
 uv run python -m predmark.lit next           # next unreviewed record
 uv run python -m predmark.research trials    # every evaluation ever run
 uv run python -m predmark.research check-paper research/papers/P001-.../paper.md
+uv run python -m predmark.collect list       # daily data collectors
+uv run python -m predmark.jev ping           # check TYPESAFE_API_KEY with one Jev call
 ```
 
 The rules that keep results honest are in `CLAUDE.md`: preregistration, one look at each holdout, an
 append-only trial ledger, event-clustered uncertainty, and costs in every profitability claim.
+
+## Data collections
+
+Some data can only be gathered going forward: a quote as it stood, or a forecast made before the
+outcome was known. A collector in `predmark.collect` records one such dataset each day, and never
+trades. Each writes to `collect/<name>/` in the state directory, with a `runs.jsonl` of every run.
+To add one, write a module that defines `COLLECTOR` and list it in `MODULES` in
+`src/predmark/collect/__init__.py`.
+
+### Jev forecasts
+
+`jev-forecasts` asks TypeSafe's Jev (`predmark.jev`, model `jev-1.14.0`) whether each market in the
+Nothing Ever Happens universe will resolve YES. Jev sees the market's text but no prices. Each record
+holds Jev's probability, the listing quote, and the bet it implies: YES at the ask or NO at the bid
+when the edge after the taker fee is at least 5 cents. The bet is recorded, never placed. Each
+market is forecast once, and each run is capped at $0.25 of Jev spend (about $0.01 in practice).
+Jev's training cutoff is unknown, so this data is only trusted forward. It is the data for E003
+(`research/experiments/E003-jev-forecast/preregistration.md`). Jev is used for nothing else.
 
 ## Strategies
 
@@ -77,12 +97,14 @@ almost all of it spread (`research/experiments/E002-nothing-ever-happens/report.
 
 `deploy/modal_app.py` (app `predmark-strategies`) runs every registered strategy once a day at
 14:00 UTC, paper only. Journals live on the Modal Volume `predmark-paper`, so positions carry over.
-One strategy failing does not stop the others. The app holds no credentials.
+One strategy failing does not stop the others. After the strategies, the same job runs every data
+collector (below). The app holds no venue credentials. Its one secret is `typesafe-jev`, for Jev.
 
 ```sh
 uv run modal deploy deploy/modal_app.py
 uv run modal run deploy/modal_app.py::status
 uv run modal run deploy/modal_app.py::run --name nothing-ever-happens   # one pass now
+uv run modal run deploy/modal_app.py::collect --name jev-forecasts      # one collection now
 uv run modal app logs predmark-strategies
 ```
 
