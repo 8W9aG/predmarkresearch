@@ -73,3 +73,58 @@ def test_nice_ticks_cover_the_range():
 def test_money_format():
     assert site.money(-29.9, signed=True) == "−$29.90"
     assert site.money(1234.5, signed=True) == "+$1,234.50"
+
+
+def test_public_run_logs_serves_only_top_level_run_logs(tmp_path):
+    write_runs(tmp_path / "a.runs.jsonl", [run(1, 0)])
+    (tmp_path / "a.sqlite").write_text("journal")
+    (tmp_path / "KILL").write_text("")
+    (tmp_path / "collect").mkdir()
+    (tmp_path / "collect" / "runs.jsonl").write_text("{}\n")
+    assert list(site.public_run_logs(tmp_path)) == ["a.runs.jsonl"]
+
+
+def test_safe_log_name():
+    assert site.safe_log_name("nothing-ever-happens.kalshi-demo.runs.jsonl")
+    for bad in ["../x.runs.jsonl", "/x.runs.jsonl", "d/x.runs.jsonl", "..\\x.runs.jsonl", "x.db"]:
+        assert not site.safe_log_name(bad)
+
+
+class Response:
+    def __init__(self, body):
+        self.body = json.dumps(body).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, *args):
+        return self.body
+
+
+def test_fetch_from_url_writes_logs_and_rejects_paths(tmp_path, monkeypatch):
+    import urllib.request
+
+    body = {"files": {"a.runs.jsonl": '{"ts": 1}\n'}}
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout: Response(body))
+    assert site.fetch_from_url(tmp_path / "s", "https://example.test/logs") == ["a.runs.jsonl"]
+    assert (tmp_path / "s" / "a.runs.jsonl").read_text() == '{"ts": 1}\n'
+
+    body = {"files": {"../escape.runs.jsonl": "x"}}
+    try:
+        site.fetch_from_url(tmp_path / "t", "https://example.test/logs")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("path name accepted")
+    assert not (tmp_path / "escape.runs.jsonl").exists()
+
+
+def test_fetch_from_url_requires_https(tmp_path):
+    try:
+        site.fetch_from_url(tmp_path, "file:///etc/passwd")
+    except ValueError:
+        return
+    raise AssertionError("non-https URL accepted")

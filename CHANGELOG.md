@@ -6,6 +6,7 @@ All notable changes to this project are recorded here, in [Keep a Changelog](htt
 
 ### Added
 
+- The `deploy-modal` workflow deploys `deploy/modal_app.py` on pushes to `main` that change the app's code or dependencies, after lint and tests pass. Its Modal token is an environment secret of `modal-deploy`, which only `main` can use, so a pull request cannot read it. There is no approval step: anyone who can push to `main` can deploy. Its actions are pinned to commit SHAs.
 - `predmark run --venue kalshi-demo` and `predmark status --venue kalshi-demo`. A strategy pass can send orders to Kalshi's demo exchange through `Engine`, with demo market data, the default `RiskLimits` and its own journal (`<name>.kalshi-demo.sqlite`). It reconciles before trading and places no orders on a mismatch. `open_paper` became `open_engine(..., venue)`. Production is not a venue option.
 - `python -m predmark.execution.demo_check`, which runs the order lifecycle on the demo exchange: rest, cancel, fill, close, and a lost send response that `reconcile()` resolves after a restart. It is tested offline against the paper venue, including fills that arrive late. It passed on the demo exchange on 2026-11-11, and so did a 5-entry Nothing Ever Happens pass with `--venue kalshi-demo`.
 
@@ -16,6 +17,7 @@ All notable changes to this project are recorded here, in [Keep a Changelog](htt
 
 ### Changed
 
+- The `site` workflow no longer holds a Modal token, which could reach the whole Modal workspace. The Modal app has a new `run_logs` web endpoint, public and read-only, that serves only the `*.runs.jsonl` files the site already publishes. The workflow reads it with `python -m predmark.site --from-url`, from the repo variable `RUN_LOGS_URL`. Run log names in the response must be bare `*.runs.jsonl` names, so a bad response cannot write outside the state directory. `--from-modal` stays for local builds.
 - Paper fills and the Nothing Ever Happens backtest charge a direct Kalshi account's fee: the formula rounded up to $0.0001, not to the cent. Kalshi's fee rounding docs and every demo fill on 2026-11-11 agree. A one-contract NO entry at 0.2¢ now pays $0.0002, not $0.01. Paper journals keep the fees they were charged, so paper P&L has a step at this change. `kalshi_fee` still defaults to the cent grid, because the committed E001 to E003 analyses and the E003 preregistration use it. E001 and E002 used 100-contract lots, where cent rounding adds under 0.01¢ per contract, so their results stand without an erratum.
 
 ### Fixed

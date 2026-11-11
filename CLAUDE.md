@@ -6,7 +6,7 @@ Automated research on prediction markets, building toward strategies this system
 
 - `uv run pytest` and `uv run ruff check . && uv run ruff format .`
 - `uv run predmark --help`: list, backtest, run, and status for registered strategies. See `README.md`.
-- Website: `uv run python -m predmark.site --from-modal` builds `site/` from the repo.
+- Website: `uv run python -m predmark.site --from-url URL` (or `--from-modal`) builds `site/` from the repo.
 - Agent tools, not in the CLI: `uv run python -m predmark.lit` and `python -m predmark.research`.
 - Skills: `/lit-review`, `/research-cycle`, `/write-paper`.
 

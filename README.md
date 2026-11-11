@@ -126,6 +126,10 @@ uv run modal run deploy/modal_app.py::collect --name jev-forecasts      # one co
 uv run modal app logs predmark-strategies
 ```
 
+The `deploy-modal` workflow deploys the app on each push to `main` that changes `deploy/`,
+`src/predmark/`, or the dependencies, after lint and tests pass. Its Modal token is in the GitHub
+environment `modal-deploy`, which only `main` can use. Setup steps are at the top of the workflow.
+
 To stop new orders, put a file named `KILL` on the volume. To stop the schedule, run
 `modal app stop predmark-strategies`.
 
@@ -141,13 +145,19 @@ A static site shows every registered strategy, its paper performance over time, 
 behind it. Rebuild it from the repo:
 
 ```sh
-uv run python -m predmark.site --from-modal   # pull run logs from the Modal volume, then build
+uv run python -m predmark.site --from-url "$PREDMARK_RUN_LOGS_URL"   # pull run logs, then build
+uv run python -m predmark.site --from-modal   # same, read straight from the volume (Modal token)
 uv run python -m predmark.site                # build from local runs in data/paper
 open site/index.html
 ```
 
 The output in `site/` is plain HTML, CSS, and one small script, with no external requests, so any
-static host can serve it. It is gitignored. A strategy's `evidence` lists the experiments whose
+static host can serve it. It is gitignored.
+
+The `site` workflow uses `--from-url`. It reads the `run_logs` web endpoint of the Modal app, which
+is public and read-only and serves only the `*.runs.jsonl` files the site publishes anyway. So
+GitHub holds no Modal token. Set the repo variable `RUN_LOGS_URL` to the endpoint URL that
+`modal deploy` prints. A strategy's `evidence` lists the experiments whose
 `report.md` the site links to.
 
 ## Execution

@@ -41,10 +41,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 - [ ] Stop overlapping Modal runs. The scheduled `daily` and the manual `run` function can write the same journal at once. Take a lock file on the volume. Also delete the orphaned `nothing_ever_happens.sqlite` from the cancelled first run.
 - [ ] Back up the paper journals. All paper history lives in one SQLite file per strategy on one Modal Volume. Snapshot each journal daily, for example to the bucket in "Publish the raw data".
 
-### Security
-
-- [ ] Limit what the GitHub Modal token can reach. The `github-pages` token can access the whole Modal workspace, and anyone who can edit the site workflow could use it. Either move the paper app to its own Modal workspace, or have the daily Modal job publish the run logs itself and give GitHub no Modal token at all.
-
 ### Research backlog
 
 - [ ] Start the literature review with the user. 0 of 397 indexed records have been reviewed (`python -m predmark.lit next`). Paper P001 has no citations because of this.

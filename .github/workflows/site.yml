@@ -1,8 +1,9 @@
 # Build the strategy website from the repo and the Modal run logs, and publish it to GitHub Pages.
 # Runs after the daily Modal pass (14:00 UTC), on every push to main, and on demand.
 #
-# Needs repo secrets MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (use a token made for this), and
-# Settings > Pages > Source set to "GitHub Actions".
+# Run logs come from the public, read-only `run_logs` endpoint in deploy/modal_app.py, so this
+# workflow holds no Modal token. Needs the repo variable RUN_LOGS_URL (the endpoint's URL, printed
+# by `modal deploy`), and Settings > Pages > Source set to "GitHub Actions".
 name: site
 
 on:
@@ -30,9 +31,8 @@ jobs:
       - run: uv sync
       - name: Build site
         env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: uv run python -m predmark.site --from-modal
+          PREDMARK_RUN_LOGS_URL: ${{ vars.RUN_LOGS_URL }}
+        run: uv run python -m predmark.site --from-url
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
