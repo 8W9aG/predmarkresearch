@@ -9,35 +9,16 @@ Prefer a deterministic check (lint, test, CI job) where one can do the job, and 
 ## Next: use Jev
 
 [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is TypeSafe AI's first "System One" model.
-- **What it does:** it takes unstructured text and a set of typed questions (boolean, choice, score) defined in advance. It answers them all in one query, with a probability or confidence for each.
+- **What it does:** it takes unstructured text and a set of typed questions (`noul` for yes/no, `choice`, `score`) defined in advance. It answers them all in one query, with a probability or confidence for each.
 - **What it can't do:** generate free text. Choices with more than 255 options fall back to a slower two-stage scoring.
-- **Speed and cost:** TypeSafe claims 70–500 ms end to end. Input costs $0.042 per 1M tokens, output is free, and the context is 32k tokens.
+- **Speed and cost:** TypeSafe claims 70–500 ms end to end. Input costs $0.042 per 1M tokens, output is free, and the context is 64k tokens per request and 32k per question.
 - **Access:** it's in early access directly from TypeSafe (docs.typesafe.ai, with a waitlist), and through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) as `typesafe-ai/jev`.
 - **Caveats:** TypeSafe says the outputs are calibrated, but the post shows no calibration numbers. Its evals score Jev against the average of large LLMs, not ground-truth labels. So we measure calibration ourselves before relying on it. All figures as of 2026-11-08.
 
-- [ ] Set up access.
-  - Choose TypeSafe's own API or the Vercel AI Gateway.
-  - Find out how to call it from Python. Vercel's documented example uses the TypeScript `ai` SDK (`experimental_decide`). Check docs.typesafe.ai and the AI Gateway docs for a REST endpoint we can call with `httpx`.
-  - Add the gateway key to `.env.example`. Never commit the key itself.
-  - Add a small `predmark.jev` client with retries on GET-safe errors only, a per-run spend cap and a cost log.
-- [ ] Measure it before trusting it. Build a small hand-labelled set for each use below, and report accuracy and calibration (a reliability table and Brier score) on a held-out split. Then decide which uses to keep.
-- [ ] Literature triage: replace the `TOPIC` regex in `predmark.lit.library` with Jev questions such as "Is this about prediction markets?" and "Is this empirical work on market prices?". Use the probability to order `INDEX.md`. Keep the regex as a fallback.
-- [ ] Classify market rules from their text, for example:
-  - can the market close early?
-  - does it resolve on an objective source?
-  - is it a duplicate of another market?
-  - which category is it?
+Jev is used for one thing only: daily forecasts of the top markets, collected going forward for E003 (`research/experiments/E003-jev-forecast/preregistration.md`). Not for code, lint, literature review or anything else. Its training cutoff is unknown, so no backfill: only forecasts made before an outcome is known count.
 
-  These become features and filters known at decision time. Store the model ID and question wording with each label, so results can be reproduced.
-- [ ] Natural-language lint rules in CI, in the style of [jev-lint](https://github.com/mizchi/jev-lint/wiki):
-  - the commenting rules: no comment that restates the code, and every threshold has a source.
-  - single-source-of-truth: a new literal that duplicates a constant.
-  - the trading rules in `CLAUDE.md`: nothing bypasses `Engine`, and nothing raises `RiskLimits`.
-
-  Run them on the diff only. Report them as warnings until accuracy on our own code is measured.
-- [ ] Rubric checks for papers and reports in `check-paper`: does every claim of profit include costs, is the holdout stated, and are null results reported? Jev complements the deterministic checks and does not replace them.
-- [ ] Screen untrusted text (papers, feeds, market rules) for embedded instructions before an agent reads it, and log what it flags.
-- [ ] Open question: can Jev's probabilities be a forecasting signal against market prices? Treat that as a research idea, not a tool. It needs a preregistered experiment with spread and fees. Its output must use only text available at decision time. Add it to `research/ideas.md`.
+- [ ] From 2026-11-22, check the dev forecasts (2026-11-08 to 2026-11-21): `fetch.py dev`, then `analyze.py dev`. Look at the error rate (2 errors on 2026-11-10), bet rate, spend, and that every record has `model` `jev-1.14.0`.
+- [ ] On or after 2027-03-07, run `fetch.py holdout` and `analyze.py holdout` once, and write the report. Both scripts refuse earlier dates.
 
 ## This repo's own gaps
 
@@ -50,7 +31,7 @@ Found while building the paper runner, E002 and the website (2026-11-08).
   - Every `results.json` is committed after its experiment's `preregistration.md`, which is checked from `git log`.
   - `python -m predmark.research check-paper` passes on every paper in `research/papers/`.
 - [ ] Publish the raw data behind each result. `data/` is gitignored, so nobody else can reproduce E001 or E002 from the repo. Each `results.json` records a dataset hash but not where the data lives. Push each dataset to a Hugging Face dataset or a bucket, pinned by that hash, and link it from the report.
-- [ ] Preregister the popular-markets version of Nothing Ever Happens as E003. The exploratory backtest (−4.5¢ per contract, 95% interval −8.9¢ to +0.3¢, 182 markets) reused E002's already-opened holdout. It needs its own preregistration and a holdout of markets that close after the preregistration is committed.
+- [ ] Preregister the popular-markets version of Nothing Ever Happens as E004. The exploratory backtest (−4.5¢ per contract, 95% interval −8.9¢ to +0.3¢, 182 markets) reused E002's already-opened holdout. It needs its own preregistration and a holdout of markets that close after the preregistration is committed.
 
 ### Paper results that match backtests
 
