@@ -36,6 +36,7 @@ uv run python -m predmark.lit harvest        # arXiv, OpenAlex, Semantic Scholar
 uv run python -m predmark.lit next           # next unreviewed record
 uv run python -m predmark.research trials    # every evaluation ever run
 uv run python -m predmark.research check-paper research/papers/P001-.../paper.md
+uv run python -m predmark.research check-integrity   # the research rules CI enforces
 uv run python -m predmark.collect list       # daily data collectors
 uv run python -m predmark.jev ping           # check TYPESAFE_API_KEY with one Jev call
 ```

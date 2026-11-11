@@ -26,10 +26,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### Trustworthy results
 
-- [ ] Enforce the research rules in CI. Today only convention enforces them.
-  - `research/trials.jsonl` only grows: fail if a diff removes or changes an existing line.
-  - Every `results.json` is committed after its experiment's `preregistration.md`, which is checked from `git log`.
-  - `python -m predmark.research check-paper` passes on every paper in `research/papers/`.
 - [ ] Publish the raw data behind each result. `data/` is gitignored, so nobody else can reproduce E001 or E002 from the repo. Each `results.json` records a dataset hash but not where the data lives. Push each dataset to a Hugging Face dataset or a bucket, pinned by that hash, and link it from the report.
 - [ ] Preregister the popular-markets version of Nothing Ever Happens as E004. The exploratory backtest (−4.5¢ per contract, 95% interval −8.9¢ to +0.3¢, 182 markets) reused E002's already-opened holdout. It needs its own preregistration and a holdout of markets that close after the preregistration is committed.
 
