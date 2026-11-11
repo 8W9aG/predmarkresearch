@@ -31,7 +31,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### Paper results that match backtests
 
-- [ ] Record a daily snapshot of the market listing (quotes, sizes and 24-hour volume) for markets above the volume threshold. Kalshi does not serve historical order books, and `predmark.data.recorder` is unused. The daily Modal job already fetches the listing, so this costs almost nothing. Within weeks, backtests can replay exactly what the live run saw.
 - [ ] Make the backtest and live entry rules the same. Live entries happen when a market first reaches the top 1,000 by volume, often days after it opens. The backtest enters within 24 hours of opening. Once the listing snapshots exist, run the backtest on the live rule.
 - [ ] Compare live paper results with the backtest's prediction per strategy, on the website: per-contract net, NO win rate and entry price. Alert when they diverge by more than noise.
 

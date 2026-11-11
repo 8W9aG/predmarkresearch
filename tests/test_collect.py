@@ -208,3 +208,31 @@ def test_run_uses_the_popular_universe(tmp_path):
     out = jf.run(tmp_path, log=lambda m: None, data=FakeData(markets), client=client)
     assert out["universe"] == 1 and out["forecast"] == 1
     assert [r["ticker"] for r in Dataset(tmp_path / "forecasts.jsonl")] == ["A"]
+
+
+# --- Kalshi listing snapshots ---------------------------------------------------------------
+
+
+def test_listing_snapshot_keeps_every_popular_market_ranked(tmp_path):
+    from predmark.collect import kalshi_listing as kl
+    from predmark.strategies.nothing_ever_happens import MIN_VOLUME_24H
+
+    markets = [
+        market("LOW", volume_24h_fp="10"),
+        market("MID", volume_24h_fp=str(MIN_VOLUME_24H)),
+        market("TOP", volume_24h_fp="99999", rules_primary="long text"),
+    ]
+    clock = lambda: NOW  # noqa: E731
+    out = kl.run(tmp_path, log=lambda m: None, data=FakeData(markets), clock=clock)
+    assert out["listed"] == 3 and out["recorded"] == 2
+    assert out["path"] == "snapshots/2026-11-08.jsonl.gz"
+    kl.run(tmp_path, log=lambda m: None, data=FakeData(markets), clock=clock)
+    rows = list(kl.read(tmp_path / out["path"]))
+    assert [(r["ticker"], r["rank"]) for r in rows] == [("TOP", 1), ("MID", 2)] * 2
+    assert set(rows[0]) == {"listed_at", "rank", *kl.FIELDS}
+    assert rows[0]["listed_at"] == "2026-11-08T14:00:00+00:00"
+    assert rows[0]["yes_bid_dollars"] == "0.6000" and rows[0]["volume_24h_fp"] == "99999"
+
+
+def test_listing_snapshot_is_registered():
+    assert "kalshi-listing" in collect.names()

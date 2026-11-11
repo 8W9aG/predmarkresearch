@@ -62,6 +62,16 @@ market is forecast once, and each run is capped at $0.25 of Jev spend (about $0.
 Jev's training cutoff is unknown, so this data is only trusted forward. It is the data for E003
 (`research/experiments/E003-jev-forecast/preregistration.md`). Jev is used for nothing else.
 
+### Kalshi listing snapshots
+
+`kalshi-listing` records the listing quote, displayed sizes, 24-hour and lifetime volume, open
+interest and open and close times of every open Kalshi market with 24-hour volume of at least
+`MIN_VOLUME_24H`, once a day. Kalshi serves no historical order books or listings, so this is what
+lets a backtest replay what the live paper run saw. Each record carries its `rank` by 24-hour volume
+(the Nothing Ever Happens order) so a replay can apply the `TOP` cap. Files are
+`collect/kalshi-listing/snapshots/<UTC date>.jsonl.gz`, one market per line. The listing is fetched a
+few minutes after the strategy pass's own, so quotes can differ a little.
+
 ## Strategies
 
 The `predmark` CLI lists, backtests, runs, and inspects strategies registered in
