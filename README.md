@@ -75,8 +75,8 @@ few minutes after the strategy pass's own, so quotes can differ a little.
 ## Strategies
 
 The `predmark` CLI lists, backtests, runs, and inspects strategies registered in
-`predmark.strategies`. Each strategy module defines a `STRATEGY` with a `run` function (one paper
-pass) and optionally a `backtest`. To add one, write the module and list it in `MODULES` in
+`predmark.strategies`. Each strategy module defines a `STRATEGY` with a `run` function (one pass,
+on paper by default) and optionally a `backtest`. To add one, write the module and list it in `MODULES` in
 `src/predmark/strategies/__init__.py`. The CLI and the Modal job pick it up from there.
 
 ```sh
@@ -86,10 +86,17 @@ uv run predmark backtest nothing-ever-happens --start 2026-09-01 --end 2026-10-0
 uv run predmark run nothing-ever-happens --set max_new=20   # one paper pass
 uv run predmark run all                                    # every strategy
 uv run predmark status all                                 # offline account state
+uv run predmark run nothing-ever-happens --venue kalshi-demo --set max_new=5   # demo exchange
+uv run predmark status all --venue kalshi-demo
 ```
 
 Strategy options go in `--set key=value`. Each strategy keeps its own journal,
-`<state-dir>/<name>.sqlite`, with `data/paper` as the default. A file named `KILL` in the state
+`<state-dir>/<name>.sqlite`, with `data/paper` as the default. With `--venue kalshi-demo`, orders go
+to Kalshi's demo exchange instead, the journal is `<name>.kalshi-demo.sqlite`, and the default
+`RiskLimits` apply, so a pass stops at the first limit and says why. A demo pass first reconciles
+the journal with the exchange and places no orders if they disagree. It needs `KALSHI_KEY_ID` and
+`KALSHI_PRIVATE_KEY_PATH` for a demo account, exported in the shell, and a demo subaccount for the
+strategy (see Execution). Production is not an option. A file named `KILL` in the state
 directory halts new orders for all of them. Backtests are exploratory: a claim about a strategy
 needs a preregistered experiment.
 
@@ -124,8 +131,9 @@ To stop new orders, put a file named `KILL` on the volume. To stop the schedule,
 
 Paper sizing uses `PAPER_LIMITS` in `strategies/base.py` and $1,000,000 of paper cash. These limits
 skip the account-wide worst-case check, so a strategy can hold every market. The account owner
-approved them for paper only on 2026-11-08. Live and demo limits are unchanged. A one-contract
-order pays at least 1 cent in fees, because fees round up per order.
+approved them for paper only on 2026-11-08. Live and demo limits are unchanged. Paper fills pay a
+direct Kalshi account's taker fee, rounded up to $0.0001, which matched every demo fill on
+2026-11-11. Paper runs before then paid at least 1 cent per order (see `CHANGELOG.md`).
 
 ## Website
 
@@ -149,7 +157,7 @@ static host can serve it. It is gitignored. A strategy's `evidence` lists the ex
 | Venue | Status |
 | --- | --- |
 | Paper, on live or replayed books | Works |
-| Kalshi demo | Implemented against the V2 order API, tested with mocks, not yet run against the exchange |
+| Kalshi demo | Works. `--venue kalshi-demo` in the runner. The lifecycle check passed on the demo exchange on 2026-11-11. One subaccount per journal (see below) |
 | Kalshi production | Off. Needs `env="prod"`, `allow_live=True`, and `PREDMARK_ARM_LIVE` |
 | Polymarket | Data and paper only. Its docs list the US as close-only on the API |
 
@@ -157,6 +165,42 @@ Protections: a write-ahead order journal, risk checks that count resting orders 
 price collars, stale-book rejection, a daily loss halt, a kill file (`touch data/KILL`), idempotent
 fills, and reconciliation against the venue. An order whose send outcome is unknown is never retried:
 the engine halts until reconciliation resolves it.
+
+To test the order lifecycle on Kalshi's demo exchange, with demo credentials exported:
+
+```sh
+uv run python -m predmark.execution.demo_check   # or --ticker <demo market>
+```
+
+It trades one contract at a time through `Engine`: rest, cancel, fill, close, and a crash whose
+send response is lost and which `reconcile()` resolves after a restart. It reconciles after each
+step, stops at the first failure and cancels what it left open, and writes the results to
+`data/demo-check/`. Its journal, `data/demo-check/journal.sqlite`, persists between runs.
+
+Each demo journal trades in its own Kalshi subaccount, set in `DEMO_SUBACCOUNTS` in
+`execution/kalshi.py`: 1 for the check, 2 for Nothing Ever Happens. The engine syncs every fill
+and position its venue can see, so two journals sharing a subaccount would count each other's
+trades. The primary subaccount (0) holds unallocated funds. A journal records the account it first
+traded on and refuses to open against another. A new strategy needs a subaccount, created with
+`POST /portfolio/subaccounts` and funded with `POST /portfolio/subaccounts/transfer`, before it
+can run on demo.
+
+Kalshi also funds each exchange index (shard) separately and refuses an order on an unfunded one.
+A strategy skips markets on an index where its subaccount has no cash, and counts them as
+`unfunded`. Subaccount 2 has cash on indexes 0 and 2, which held every popular demo market on
+2026-11-11. Manage subaccounts and shard cash with:
+
+```sh
+uv run python -m predmark.execution.demo_accounts balances
+uv run python -m predmark.execution.demo_accounts create
+uv run python -m predmark.execution.demo_accounts transfer --to-sub 2 --to-shard 2 --dollars 10
+```
+
+A transfer is sent once and never retried. Kalshi refuses an idempotency key on transfers that
+involve a subaccount, so check `balances` before sending one again.
+
+Kalshi's order and position listings trail its matching engine, by 0.3 to 0.7 seconds on demo.
+`reconcile()` re-reads after `KalshiVenue.listing_lag_seconds` before it acts on a disagreement.
 
 Not built yet: websocket feeds and per-series tick and fee lookup. The order book recorder in
 `predmark.data.recorder` is not wired to any command.

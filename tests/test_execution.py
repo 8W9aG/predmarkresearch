@@ -419,3 +419,153 @@ def test_place_timeout_is_unknown_and_sent_once():
 def test_polymarket_orders_are_disabled():
     with pytest.raises(VenueDisabled):
         PolymarketBooks().place(buy())
+
+
+class LaggingListings(PaperVenue):
+    """Open orders and positions are served one read late, as Kalshi's listings trail its book."""
+
+    listing_lag_seconds = 2.0
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._last_open, self._last_pos = [], {}
+
+    def open_orders(self):
+        stale, self._last_open = self._last_open, super().open_orders()
+        return stale
+
+    def positions(self):
+        stale, self._last_pos = self._last_pos, super().positions()
+        return stale
+
+
+def test_reconcile_rereads_a_lagging_listing_before_acting(tmp_path):
+    clock = Clock()
+    venue = LaggingListings(Books(clock), cash=D(1000), clock=clock)
+    slept = []
+    engine = Engine(
+        venue, tmp_path / "j.sqlite", kill_file=tmp_path / "K", clock=clock, sleep=slept.append
+    )
+    rest = buy(price="0.30")
+    assert engine.submit(rest) is OrderStatus.RESTING
+    assert engine.reconcile() == []
+    assert slept == [2.0]
+    row = engine.db.execute("SELECT status FROM orders").fetchone()
+    assert row["status"] == "resting"  # not marked gone on the stale, empty first read
+    assert engine.halt_reason is None
+
+
+def test_reconcile_without_lag_does_not_wait(rig):
+    engine, *_ = rig
+    engine.sleep = lambda s: (_ for _ in ()).throw(AssertionError("slept"))
+    engine.submit(buy(price="0.30"))
+    assert engine.reconcile() == []
+
+
+def test_every_kalshi_call_names_the_subaccount():
+    import json
+
+    seen = []
+
+    def handler(request):
+        body = json.loads(request.content) if request.content else {}
+        seen.append(
+            (
+                request.method,
+                request.url.path,
+                request.url.params.get("subaccount"),
+                body.get("subaccount"),
+            )
+        )
+        if request.method == "POST":
+            return httpx.Response(
+                201, json={"order_id": "o1", "fill_count": "0", "remaining_count": "1"}
+            )
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"order_id": "o1"})
+        if request.url.path.endswith("/balance"):
+            return httpx.Response(200, json={"balance_dollars": "1"})
+        return httpx.Response(200, json={})
+
+    venue = KalshiVenue(
+        "k",
+        ed25519.Ed25519PrivateKey.generate(),
+        subaccount=7,
+        transport=httpx.MockTransport(handler),
+    )
+    assert venue.account == "kalshi-demo/7"
+    venue.place(buy())
+    venue.cancel("o1", T)
+    venue.open_orders()
+    venue.find_order("c", 0)
+    venue.positions()
+    venue.fills(0)
+    venue.balance()
+    venue.book(T)
+    for method, path, query, body in seen:
+        if "/portfolio/" not in path:
+            assert query is None  # market data has no subaccount
+        elif method == "POST":
+            assert body == 7
+        else:
+            assert query == "7", (method, path)
+    with pytest.raises(ValueError, match="subaccount"):
+        KalshiVenue("k", ed25519.Ed25519PrivateKey.generate(), subaccount=64)
+
+
+def test_journal_is_bound_to_its_first_account(tmp_path):
+    from predmark.execution.engine import JournalAccountMismatch
+
+    clock = Clock()
+    Engine(PaperVenue(Books(clock)), tmp_path / "j.sqlite", kill_file=tmp_path / "K")
+
+    class OtherAccount(PaperVenue):
+        account = "kalshi-demo/2"
+
+    with pytest.raises(JournalAccountMismatch, match="bound to paper"):
+        Engine(OtherAccount(Books(clock)), tmp_path / "j.sqlite", kill_file=tmp_path / "K")
+    # an offline reader may open it anyway
+    Engine(OtherAccount(Books(clock)), tmp_path / "j.sqlite", bind_account=False)
+
+
+def test_unmapped_strategy_has_no_demo_subaccount():
+    from predmark.execution.kalshi import DEMO_SUBACCOUNTS, demo_subaccount
+
+    assert len(set(DEMO_SUBACCOUNTS.values())) == len(DEMO_SUBACCOUNTS)
+    assert 0 not in DEMO_SUBACCOUNTS.values()
+    with pytest.raises(KeyError, match="no demo subaccount"):
+        demo_subaccount("new-strategy")
+
+
+def test_partial_ioc_is_not_reported_filled():
+    def handler(request):
+        # Kalshi reports remaining 0 once the unfilled part of an IOC is cancelled.
+        return httpx.Response(
+            201, json={"order_id": "o1", "fill_count": "0.42", "remaining_count": "0.00"}
+        )
+
+    result = _venue(handler).place(sell(count="1", tif=TimeInForce.IOC))
+    assert result.status is OrderStatus.CANCELED and result.filled == D("0.42")
+
+
+def test_full_fill_and_resting_remainder():
+    full = _venue(
+        lambda r: httpx.Response(
+            201, json={"order_id": "o", "fill_count": "1.00", "remaining_count": "0.00"}
+        )
+    )
+    assert full.place(buy(count="1", tif=TimeInForce.IOC)).status is OrderStatus.FILLED
+    part = _venue(
+        lambda r: httpx.Response(
+            201, json={"order_id": "o", "fill_count": "0.40", "remaining_count": "0.60"}
+        )
+    )
+    assert part.place(buy(count="1")).status is OrderStatus.RESTING
+
+
+def test_paper_fee_uses_the_direct_account_grid():
+    from predmark.execution.paper import default_fee
+
+    assert default_fee(D(1), D("0.80"), True) == D("0.0112")  # demo charged 0.0112 on 2026-11-11
+    assert default_fee(D("0.42"), D("0.03"), True) == D("0.0009")  # demo charged 0.000900
+    assert kalshi_fee(D(1), D("0.80")) == D("0.02")  # default stays on the cent grid for E001-E003

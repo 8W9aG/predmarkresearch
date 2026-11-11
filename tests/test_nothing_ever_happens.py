@@ -58,11 +58,11 @@ def panel(no_rate, n=600, bid=0.30, seed=0):
 
 
 def test_planted_edge_is_found():
-    # NO costs 0.70 and wins 90% of the time: about +0.18 a contract after a 2 cent fee.
+    # NO costs 0.70 and wins 90% of the time: about +0.19 a contract after a 1.47 cent fee.
     result = bt.evaluate(panel(0.90), n_boot=200)
     assert result["traded"] == 600
     assert result["net_ci95_event"][0] > 0.1
-    assert abs(result["mean_fee"] - 0.02) < 1e-9
+    assert abs(result["mean_fee"] - 0.0147) < 1e-9
 
 
 def test_fair_prices_lose_the_fee():
@@ -71,10 +71,13 @@ def test_fair_prices_lose_the_fee():
     assert result["net_ci95_event"][0] < 0 < result["net_ci95_event"][1] + 0.05
 
 
-def test_lot_size_changes_fee_rounding():
+def test_fee_is_on_the_direct_account_grid():
+    # 0.07 x 0.3 x 0.7 = 0.0147 exactly, so a one-lot pays no rounding on the $0.0001 grid.
     one = bt.evaluate(panel(0.7), lot=1, n_boot=10)["mean_fee"]
     hundred = bt.evaluate(panel(0.7), lot=100, n_boot=10)["mean_fee"]
-    assert one == 0.02 and hundred < one
+    assert abs(one - 0.0147) < 1e-12 and abs(hundred - one) < 1e-12
+    # 0.07 x 0.31 x 0.69 = 0.014973, rounded up to 0.0150 on one lot.
+    assert abs(bt.evaluate(panel(0.7, bid=0.31), lot=1, n_boot=10)["mean_fee"] - 0.015) < 1e-12
 
 
 def test_entry_never_uses_quotes_outside_the_window_or_at_close():
@@ -133,9 +136,9 @@ def rig(tmp_path, limits=PAPER_LIMITS, cash=D(10_000)):
 
 
 def test_paper_limits_enter_every_market_until_cash_runs_out(tmp_path):
-    ex, venue, engine = rig(tmp_path, cash=D(100))  # each NO locks 0.80 plus a 2 cent fee
+    ex, venue, engine = rig(tmp_path, cash=D(100))  # each NO locks 0.80 plus a 0.0112 fee
     summary = run_pass(engine, [{"ticker": f"T{i}"} for i in range(300)], ex.lookup)
-    assert summary.entered == 121
+    assert summary.entered == 123
     assert summary.stopped == "rejected: insufficient balance"
     assert engine.reconcile() == []
 
@@ -167,7 +170,7 @@ def test_settlement_uses_one_batch_lookup(tmp_path):
 
     assert run_pass(engine, [], lookup).settled == 5
     assert calls == [5]
-    assert engine.ledger.realized == D("0.90")  # 5 x (0.20 received - 0.02 fee)
+    assert engine.ledger.realized == D("0.944")  # 5 x (0.20 received - 0.0112 fee)
 
 
 def test_total_loss_check_can_be_disabled_but_is_on_by_default():
@@ -187,8 +190,8 @@ def test_report_marks_unquoted_positions_at_the_worst_case(tmp_path):
     listing = [{"ticker": "A", "yes_bid_dollars": "0.10", "yes_ask_dollars": "0.12"}]
     out = report(engine, listing)
     assert out["open_positions"] == 2 and out["held_unquoted"] == 1
-    # A: received 0.18 net, marked at ask 0.12 -> +0.06. B: received 0.18, marked at 1 -> -0.82.
-    assert D(out["mark_nav"]) == D("-0.76")
+    # A: 0.1888 net, marked at ask 0.12 -> +0.0688. B: 0.1888, marked at 1 -> -0.8112.
+    assert D(out["mark_nav"]) == D("-0.7424")
     assert listing_book({"ticker": "Z", "yes_bid_dollars": "0"}, 0).best_bid is None
 
 
@@ -242,3 +245,21 @@ def test_volume_rule_uses_only_volume_traded_before_entry():
     assert bt.entry(row, min_volume=10_000) == (0.5, 0.52)  # 12,000 traded by hour 3
     assert bt.entry(row, min_volume=0) == (0.3, 0.32)
     assert bt.entry(row, min_volume=20_000) is None
+
+
+def test_unfunded_markets_are_skipped_not_stopped_at(tmp_path):
+    ex, _, engine = rig(tmp_path)
+    markets = [{"ticker": f"T{i}", "exchange_index": i % 2} for i in range(6)]
+    summary = run_pass(engine, markets, ex.lookup, tradable=lambda m: m["exchange_index"] == 0)
+    assert (summary.entered, summary.unfunded, summary.stopped) == (3, 3, None)
+
+
+def test_funded_reads_shard_balances_only_where_the_venue_has_them(tmp_path):
+    from predmark.strategies.base import funded
+
+    ex, venue, engine = rig(tmp_path)
+    assert funded(engine)({"exchange_index": 3})
+    venue.shard_balances = lambda: {0: D(5), 2: D(0), 3: D("0.01")}
+    ok = funded(engine)
+    assert [ok({"exchange_index": i}) for i in range(4)] == [True, False, False, True]
+    assert ok({"ticker": "no index given"})  # Kalshi's catch-all shard is 0

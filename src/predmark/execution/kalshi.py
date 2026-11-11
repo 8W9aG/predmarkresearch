@@ -38,6 +38,22 @@ URLS = {
     "prod": "https://external-api.kalshi.com/trade-api/v2",
 }
 ARM_VALUE = "trade-real-money"
+MAX_SUBACCOUNT = 63
+
+# Each journal trades in its own subaccount on the owner's demo account, because the engine syncs
+# every fill and position its venue can see. Kalshi numbers subaccounts in creation order
+# (POST /portfolio/subaccounts), and money moves in with POST /portfolio/subaccounts/transfer.
+# Subaccount 0, the primary, holds unallocated funds and no journal trades in it.
+# Created and funded on 2026-11-11: 1 with $20, 2 with $40.
+DEMO_SUBACCOUNTS = {"demo-check": 1, "nothing-ever-happens": 2}
+
+
+def demo_subaccount(name: str) -> int:
+    if name not in DEMO_SUBACCOUNTS:
+        raise KeyError(
+            f"{name} has no demo subaccount. Create and fund one, then add it to DEMO_SUBACCOUNTS."
+        )
+    return DEMO_SUBACCOUNTS[name]
 
 
 class LiveTradingNotArmed(RuntimeError):
@@ -103,6 +119,8 @@ def _venue_order(o: dict[str, Any]) -> VenueOrder:
 
 class KalshiVenue:
     name = "kalshi"
+    # Order and position listings trailed the matching engine by up to 0.7 s on demo (2026-11-11).
+    listing_lag_seconds = 2.0
 
     def __init__(
         self,
@@ -112,26 +130,35 @@ class KalshiVenue:
         allow_live: bool = False,
         transport: httpx.BaseTransport | None = None,
         timeout: float = 10.0,
+        subaccount: int = 0,
     ):
         if env not in URLS:
             raise ValueError(f"unknown env {env}")
+        if not 0 <= subaccount <= MAX_SUBACCOUNT:
+            raise ValueError(f"subaccount {subaccount} outside 0..{MAX_SUBACCOUNT}")
         if env == "prod" and not (allow_live and os.environ.get("PREDMARK_ARM_LIVE") == ARM_VALUE):
             raise LiveTradingNotArmed(
                 "Production needs allow_live=True and "
                 f"PREDMARK_ARM_LIVE={ARM_VALUE}. Only the account owner should set these."
             )
         self.env = env
+        # Order and fill listings default to every subaccount, and positions, balance and cancel
+        # default to 0. So every call names the subaccount, the primary included.
+        self.subaccount = subaccount
+        self.account = f"kalshi-{env}/{subaccount}"
         self.key_id = key_id
         self.private_key = private_key
         self.base_path = urlsplit(URLS[env]).path
         self.http = httpx.Client(base_url=URLS[env], timeout=timeout, transport=transport)
 
     @classmethod
-    def from_env(cls, env: str = "demo", allow_live: bool = False) -> KalshiVenue:
+    def from_env(
+        cls, env: str = "demo", allow_live: bool = False, subaccount: int = 0
+    ) -> KalshiVenue:
         key_id = os.environ["KALSHI_KEY_ID"]
         pem = Path(os.environ["KALSHI_PRIVATE_KEY_PATH"]).read_bytes()
         key = serialization.load_pem_private_key(pem, password=None)
-        return cls(key_id, key, env=env, allow_live=allow_live)
+        return cls(key_id, key, env=env, allow_live=allow_live, subaccount=subaccount)
 
     def _headers(self, method: str, path: str) -> dict[str, str]:
         ts = str(int(time.time() * 1000))
@@ -144,6 +171,9 @@ class KalshiVenue:
         }
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """A signed read. Portfolio reads are scoped to this venue's subaccount."""
+        if path.startswith("/portfolio/"):
+            params = {**(params or {}), "subaccount": self.subaccount}
         resp = self.http.get(path, params=params, headers=self._headers("GET", path))
         resp.raise_for_status()
         return resp.json()
@@ -174,6 +204,7 @@ class KalshiVenue:
             "client_order_id": req.client_order_id,
             "post_only": req.post_only,
             "cancel_order_on_pause": True,
+            "subaccount": self.subaccount,
         }
         path = "/portfolio/events/orders"
         try:
@@ -186,9 +217,11 @@ class KalshiVenue:
             raise VenueRejected(f"HTTP {resp.status_code}: {resp.text[:300]}")
         data = resp.json()
         filled, remaining = D(data["fill_count"]), D(data["remaining_count"])
-        if remaining == 0:
+        # An IOC that fills in part reports remaining 0, because the rest is cancelled. So a full
+        # fill is judged by the fill count, not by what remains.
+        if filled >= req.count:
             status = OrderStatus.FILLED
-        elif req.tif.value == "good_till_canceled":
+        elif remaining > 0 and req.tif.value == "good_till_canceled":
             status = OrderStatus.RESTING
         else:
             status = OrderStatus.CANCELED
@@ -198,7 +231,9 @@ class KalshiVenue:
         path = f"/portfolio/events/orders/{order_id}"
         try:
             resp = self.http.delete(
-                path, params={"market_ticker": ticker}, headers=self._headers("DELETE", path)
+                path,
+                params={"market_ticker": ticker, "subaccount": self.subaccount},
+                headers=self._headers("DELETE", path),
             )
         except httpx.TransportError as exc:
             raise VenueUnknown(f"transport error: {exc}") from exc
@@ -240,4 +275,17 @@ class KalshiVenue:
         return out
 
     def balance(self) -> Decimal:
+        """Cash in this subaccount, summed over every exchange index."""
         return D(self._get("/portfolio/balance")["balance_dollars"])
+
+    def shard_balances(self) -> dict[int, Decimal]:
+        """Cash per exchange index (shard). Kalshi funds each one separately, and an order on a
+        shard without cash is refused with `insufficient_shard_balance`."""
+        path = "/portfolio/subaccounts/balances"
+        rows = self.http.get(path, headers=self._headers("GET", path))
+        rows.raise_for_status()
+        return {
+            int(r["exchange_index"]): D(r["balance"])
+            for r in rows.json().get("subaccount_balances") or []
+            if r["subaccount_number"] == self.subaccount
+        }

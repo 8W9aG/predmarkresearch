@@ -14,6 +14,7 @@ import logging
 import sqlite3
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from .models import (
     OrderRequest,
     OrderStatus,
     Side,
+    VenueOrder,
     VenueRejected,
     VenueUnknown,
 )
@@ -33,6 +35,11 @@ from .venue import Venue
 log = logging.getLogger(__name__)
 D = Decimal
 UNKNOWN_GRACE_SECONDS = 30.0
+
+
+class JournalAccountMismatch(RuntimeError):
+    """The journal belongs to a different venue account than the one it was opened with."""
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
@@ -62,8 +69,13 @@ class Engine:
         limits: RiskLimits | None = None,
         kill_file: str | Path = "data/KILL",
         clock: Callable[[], float] = time.time,
+        sleep: Callable[[float], None] = time.sleep,
+        bind_account: bool = True,
     ):
+        """`bind_account=False` opens a journal without checking or recording its account. Only
+        offline readers that never call the venue should use it."""
         self.venue = venue
+        self.sleep = sleep
         self.limits = limits or RiskLimits()
         self.kill_file = Path(kill_file)
         self.clock = clock
@@ -71,6 +83,8 @@ class Engine:
         self.db = sqlite3.connect(journal_path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        if bind_account:
+            self._bind_account(getattr(venue, "account", venue.name))
         self.ledger = Ledger()
         self._rebuild_ledger()
 
@@ -81,6 +95,13 @@ class Engine:
             self.ledger.apply(_row_fill(r))
         for r in self.db.execute("SELECT * FROM settlements ORDER BY ts"):
             self.ledger.settle(r["ticker"], D(r["yes_value"]))
+
+    def _bind_account(self, account: str) -> None:
+        bound = self._meta("venue_account")
+        if bound is None:
+            self._set_meta("venue_account", account)
+        elif bound != account:
+            raise JournalAccountMismatch(f"journal is bound to {bound}, not {account}")
 
     def _meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
@@ -325,36 +346,70 @@ class Engine:
             self.halt(f"daily loss {loss} above {self.limits.max_daily_loss}")
         return loss
 
-    def reconcile(self) -> list[str]:
-        """Compare venue truth with the journal, resolving UNKNOWN sends. Returns any mismatch."""
+    def _venue_view(self) -> VenueView:
+        """One read of venue state, after syncing fills."""
         self.sync_fills()
+        found = {
+            r["client_order_id"]: self.venue.find_order(r["client_order_id"], r["created_ts"] - 60)
+            for r in self.db.execute(
+                "SELECT * FROM orders WHERE status IN (?, ?)",
+                (OrderStatus.UNKNOWN.value, OrderStatus.PENDING_NEW.value),
+            ).fetchall()
+        }
+        open_orders = {o.order_id: o for o in self.venue.open_orders()}
+        positions = {t: q for t, q in self.venue.positions().items() if q != 0}
+        return VenueView(found, open_orders, positions)
+
+    def _disagrees(self, view: VenueView) -> bool:
+        """True if the view and the journal differ in any way reconcile would act on."""
+        if any(o is None for o in view.found.values()):
+            return True
+        resting = {
+            r["venue_order_id"]
+            for r in self.db.execute(
+                "SELECT venue_order_id FROM orders WHERE status = ?", (OrderStatus.RESTING.value,)
+            )
+        }
+        resting |= {o.order_id for o in view.found.values() if o.status is OrderStatus.RESTING}
+        local_pos = {t: p.contracts for t, p in self.ledger.markets.items() if p.contracts != 0}
+        return resting != view.open_orders.keys() or local_pos != view.positions
+
+    def reconcile(self) -> list[str]:
+        """Compare venue truth with the journal, resolving UNKNOWN sends. Returns any mismatch.
+
+        A venue's order and position listings can trail its matching engine. Kalshi's demo lagged
+        0.3 to 0.7 seconds on 2026-11-11. So if a first read disagrees with the journal, the engine
+        waits the venue's `listing_lag_seconds` and acts only on a second read.
+        """
+        view = self._venue_view()
+        lag = float(getattr(self.venue, "listing_lag_seconds", 0.0))
+        if lag > 0 and self._disagrees(view):
+            self.sleep(lag)
+            view = self._venue_view()
         problems: list[str] = []
         now = self.clock()
 
-        for r in self.db.execute(
-            "SELECT * FROM orders WHERE status IN (?, ?)",
-            (OrderStatus.UNKNOWN.value, OrderStatus.PENDING_NEW.value),
-        ).fetchall():
-            cid = r["client_order_id"]
-            found = self.venue.find_order(cid, r["created_ts"] - 60)
+        for cid, found in view.found.items():
+            created = self.db.execute(
+                "SELECT created_ts FROM orders WHERE client_order_id = ?", (cid,)
+            ).fetchone()["created_ts"]
             if found is not None:
                 self._set_status(cid, found.status, venue_order_id=found.order_id)
-            elif now - r["created_ts"] > UNKNOWN_GRACE_SECONDS:
+            elif now - created > UNKNOWN_GRACE_SECONDS:
                 self._set_status(cid, OrderStatus.REJECTED, reason="not found at venue")
             else:
                 problems.append(f"order {cid} unresolved, still inside the grace period")
         self.sync_fills()
 
-        venue_open = {o.order_id: o for o in self.venue.open_orders()}
         local = {
             r["venue_order_id"]: r
             for r in self.db.execute(
                 "SELECT * FROM orders WHERE status = ?", (OrderStatus.RESTING.value,)
             ).fetchall()
         }
-        for oid in venue_open.keys() - local.keys():
+        for oid in view.open_orders.keys() - local.keys():
             problems.append(f"venue order {oid} is not in the journal")
-        for oid in local.keys() - venue_open.keys():
+        for oid in local.keys() - view.open_orders.keys():
             r = local[oid]
             filled = self.db.execute(
                 "SELECT count FROM fills WHERE order_id = ?", (oid,)
@@ -362,10 +417,9 @@ class Engine:
             if sum((D(f["count"]) for f in filled), D(0)) < D(r["count"]):
                 self._set_status(r["client_order_id"], OrderStatus.CANCELED, reason="gone")
 
-        venue_pos = {t: q for t, q in self.venue.positions().items() if q != 0}
         local_pos = {t: p.contracts for t, p in self.ledger.markets.items() if p.contracts != 0}
-        for ticker in venue_pos.keys() | local_pos.keys():
-            at_venue, in_journal = venue_pos.get(ticker, D(0)), local_pos.get(ticker, D(0))
+        for ticker in view.positions.keys() | local_pos.keys():
+            at_venue, in_journal = view.positions.get(ticker, D(0)), local_pos.get(ticker, D(0))
             if at_venue != in_journal:
                 problems.append(
                     f"position mismatch on {ticker}: venue {at_venue}, journal {in_journal}"
@@ -376,6 +430,13 @@ class Engine:
             if not self._meta("halted"):
                 self.halt("reconciliation mismatch: " + "; ".join(problems), cancel=False)
         return problems
+
+
+@dataclass(frozen=True)
+class VenueView:
+    found: dict[str, VenueOrder | None]  # client order id -> venue order, for unresolved sends
+    open_orders: dict[str, VenueOrder]
+    positions: dict[str, Decimal]
 
 
 def _row_fill(r: sqlite3.Row) -> Fill:

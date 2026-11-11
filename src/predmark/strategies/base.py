@@ -1,12 +1,14 @@
 """What every strategy provides, and the paper-trading pieces they share.
 
 A strategy is registered in `predmark.strategies.REGISTRY` with:
-- `run(journal, kill_file, log, **options)`: one paper pass. Returns a JSON-able summary.
+- `run(journal, kill_file, log, venue, **options)`: one pass on `venue` (`paper` or `kalshi-demo`).
+  Returns a JSON-able summary.
 - `backtest(panel, **options)`: evaluation on a panel from `predmark.backtest.panel`, or None.
 - `evidence`: experiment directories whose `report.md` the website links to.
 
-Strategies reach venues only through `Engine`. The runner in `predmark.strategies.runner` gives each
-strategy its own journal and runs them all on a schedule.
+Strategies reach venues only through `Engine`, which `open_engine` builds for paper or Kalshi demo.
+The runner in `predmark.strategies.runner` gives each strategy its own journal per venue and runs
+them all on a schedule.
 """
 
 from __future__ import annotations
@@ -62,18 +64,62 @@ class CachedBooks:
         return book
 
 
-def open_paper(journal: str | Path, kill_file: str | Path, cash: Decimal = PAPER_CASH, data=None):
-    """A paper engine on live Kalshi books, restored from its journal. Returns (engine, data)."""
-    from ..data.kalshi import KalshiData
-    from ..execution.kalshi import parse_book
-    from ..execution.paper import PaperVenue
+VENUES = ("paper", "kalshi-demo")
 
-    data = data or KalshiData(per_second=10)
-    books = CachedBooks(lambda t: parse_book(t, data.orderbook(t), time.time()))
-    venue = PaperVenue(books, cash=D(str(cash)))
-    engine = Engine(venue, journal, limits=PAPER_LIMITS, kill_file=kill_file)
-    venue.restore(engine.ledger, D(str(cash)))
-    return engine, data
+
+def open_engine(
+    journal: str | Path,
+    kill_file: str | Path,
+    venue: str = "paper",
+    cash: Decimal = PAPER_CASH,
+    data=None,
+    log: Callable[[str], None] = print,
+    name: str | None = None,
+):
+    """An engine restored from its journal. Returns (engine, data).
+
+    `paper` fills against live production books with `PAPER_LIMITS`. `kalshi-demo` sends real
+    orders to Kalshi's demo exchange, with the default `RiskLimits` and demo market data, and
+    reconciles the journal with the exchange first. On demo, `name` picks the journal's subaccount
+    from `DEMO_SUBACCOUNTS`. A mismatch halts the engine, so the pass
+    places no orders. Production is not an option here.
+    """
+    from ..data.kalshi import KalshiData
+    from ..execution.kalshi import URLS, KalshiVenue, demo_subaccount, parse_book
+    from ..execution.paper import PaperVenue
+    from ..http import ReadClient
+
+    if venue == "paper":
+        data = data or KalshiData(per_second=10)
+        books = CachedBooks(lambda t: parse_book(t, data.orderbook(t), time.time()))
+        paper = PaperVenue(books, cash=D(str(cash)))
+        engine = Engine(paper, journal, limits=PAPER_LIMITS, kill_file=kill_file)
+        paper.restore(engine.ledger, D(str(cash)))
+        return engine, data
+    if venue == "kalshi-demo":
+        data = data or KalshiData(client=ReadClient(URLS["demo"], per_second=10))
+        if name is None:
+            raise ValueError("kalshi-demo needs the strategy name to pick its subaccount")
+        kalshi = KalshiVenue.from_env(env="demo", subaccount=demo_subaccount(name))
+        engine = Engine(kalshi, journal, kill_file=kill_file)
+        problems = engine.reconcile()
+        if problems:
+            log("reconcile found problems, engine halted: " + "; ".join(problems))
+        return engine, data
+    raise ValueError(f"unknown venue {venue!r}, expected one of {VENUES}")
+
+
+def funded(engine: Engine) -> Callable[[dict[str, Any]], bool]:
+    """Whether the venue holds cash on a market's exchange index (shard).
+
+    Paper is one pool, so every market passes. Kalshi funds each shard separately and refuses
+    orders on an unfunded one, so a strategy skips those markets instead of stopping there.
+    """
+    shard_balances = getattr(engine.venue, "shard_balances", None)
+    if shard_balances is None:
+        return lambda market: True
+    cash = {i for i, b in shard_balances().items() if b > 0}
+    return lambda market: int(market.get("exchange_index") or 0) in cash
 
 
 def open_offline(journal: str | Path) -> Engine:
@@ -83,7 +129,7 @@ def open_offline(journal: str | Path) -> Engine:
     def offline(ticker: str) -> Book:
         raise RuntimeError("offline engine has no books")
 
-    return Engine(PaperVenue(offline), journal)
+    return Engine(PaperVenue(offline), journal, bind_account=False)
 
 
 def settle_positions(engine: Engine, lookup: Lookup) -> tuple[int, list[str]]:

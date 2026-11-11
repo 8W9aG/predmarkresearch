@@ -12,8 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from . import strategies
+from .strategies.base import VENUES
 
 STATE_DIR = "data/paper"
+VENUE_HELP = (
+    "paper fills against live production books; kalshi-demo sends orders to Kalshi's demo "
+    "exchange and needs KALSHI_KEY_ID and KALSHI_PRIVATE_KEY_PATH for a demo account"
+)
 
 
 def parse_options(pairs: list[str]) -> dict[str, Any]:
@@ -67,9 +72,10 @@ def _run(args: argparse.Namespace) -> int:
     if args.strategy == "all":
         if args.set:
             raise SystemExit("--set applies to one strategy, not all")
-        result = run_all(args.state_dir)
+        result = run_all(args.state_dir, venue=args.venue)
     else:
-        result = run_one(args.strategy, args.state_dir, **parse_options(args.set))
+        options = parse_options(args.set)
+        result = run_one(args.strategy, args.state_dir, venue=args.venue, **options)
     print(json.dumps(result, indent=2, default=str))
     return 0
 
@@ -78,7 +84,7 @@ def _status(args: argparse.Namespace) -> int:
     from .strategies.runner import status
 
     chosen = strategies.names() if args.strategy == "all" else [args.strategy]
-    out = {name: status(name, args.state_dir) for name in chosen}
+    out = {name: status(name, args.state_dir, args.venue) for name in chosen}
     print(json.dumps(out, indent=2, default=str))
     return 0
 
@@ -102,13 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     bt.add_argument("--results", help="where to write the results JSON")
     bt.add_argument("--set", action="append", default=[], help="strategy option key=value")
 
-    run = sub.add_parser("run", help="one paper pass against live Kalshi books")
+    run = sub.add_parser("run", help="one pass, on paper or the Kalshi demo exchange")
     run.add_argument("strategy", choices=[*names, "all"])
+    run.add_argument("--venue", choices=VENUES, default="paper", help=VENUE_HELP)
     run.add_argument("--state-dir", default=STATE_DIR, help="one journal per strategy")
     run.add_argument("--set", action="append", default=[], help="strategy option key=value")
 
-    st = sub.add_parser("status", help="paper account state, offline")
+    st = sub.add_parser("status", help="account state from the journal, offline")
     st.add_argument("strategy", choices=[*names, "all"])
+    st.add_argument("--venue", choices=VENUES, default="paper", help="which journal to read")
     st.add_argument("--state-dir", default=STATE_DIR)
 
     args = parser.parse_args(argv)

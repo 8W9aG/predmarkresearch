@@ -1,12 +1,13 @@
-"""Nothing Ever Happens: buy NO on popular markets and hold to settlement. Paper only.
+"""Nothing Ever Happens: buy NO on popular markets and hold to settlement. Paper or Kalshi demo.
 
 Buying NO at 1 - p is selling YES at p, so each entry is an immediate-or-cancel sell at the bid.
 Popular means 24-hour volume of at least MIN_VOLUME_24H on the live listing, which is known when
 the pass runs. The backtest applies the same threshold to trailing candle volume. TOP caps how many
 markets one pass considers, to keep compute small.
 
-Paper fills use the default fee model: multiplier 1, rounded up to the cent on each order, so a
-one-contract order pays at least 1 cent. The backtest uses the same lot size by default.
+Paper fills and the backtest charge a direct Kalshi account's taker fee: multiplier 1, rounded up
+to $0.0001 (see `execution/fees.py`). The backtest uses the same one-contract lot by default.
+On Kalshi, markets on an exchange index without cash are skipped and counted as `unfunded`.
 """
 
 from __future__ import annotations
@@ -21,9 +22,19 @@ from typing import Any
 
 from ..execution.engine import Engine
 from ..execution.models import OrderRequest, OrderStatus, Side, TimeInForce
-from .base import PAPER_CASH, Lookup, Strategy, open_paper, record_run, report, settle_positions
+from .base import (
+    PAPER_CASH,
+    Lookup,
+    Strategy,
+    funded,
+    open_engine,
+    record_run,
+    report,
+    settle_positions,
+)
 
-NAME = "nothing_ever_happens"
+NAME = "nothing_ever_happens"  # the strategy tag on journaled orders
+STRATEGY_NAME = "nothing-ever-happens"
 D = Decimal
 MIN_VOLUME_24H = 10_000
 TOP = 1000
@@ -37,6 +48,7 @@ class PassSummary:
     no_fill: int = 0
     no_bid: int = 0
     skipped: int = 0
+    unfunded: int = 0  # on an exchange index where the account holds no cash
     settled: int = 0
     stopped: str | None = None
     unresolved: list[str] = field(default_factory=list)
@@ -75,6 +87,7 @@ def run_pass(
     count: Decimal = D(1),
     max_new: int | None = None,
     progress: Callable[[int, PassSummary], None] | None = None,
+    tradable: Callable[[dict[str, Any]], bool] = lambda market: True,
 ) -> PassSummary:
     """Settle what has resolved, then enter every market not yet attempted, in hash order."""
     summary = PassSummary()
@@ -97,6 +110,9 @@ def run_pass(
         ticker = market["ticker"]
         if ticker in attempted:
             summary.skipped += 1
+            continue
+        if not tradable(market):
+            summary.unfunded += 1
             continue
         if _listed_without_bid(market):
             summary.no_bid += 1
@@ -134,9 +150,14 @@ def run(
     min_volume: float = MIN_VOLUME_24H,
     top: int | None = TOP,
     data: Any = None,
+    venue: str = "paper",
 ) -> dict[str, Any]:
-    """One paper pass over popular markets, appended to `<journal>.runs.jsonl`."""
-    engine, data = open_paper(journal, kill_file, cash, data)
+    """One pass over popular markets, appended to `<journal>.runs.jsonl`.
+
+    On `kalshi-demo` the default `RiskLimits` apply, so a pass stops at the first limit it reaches
+    and reports why in `pass.stopped`. `cash` applies to paper only.
+    """
+    engine, data = open_engine(journal, kill_file, venue, cash, data, log, STRATEGY_NAME)
     started = time.time()
     markets = data.open_markets(limit_pages=None)
     chosen = popular(markets, min_volume, top)
@@ -148,14 +169,19 @@ def run(
     def progress(i: int, s: PassSummary) -> None:
         log(f"{i}/{len(chosen)} entered={s.entered} no_bid={s.no_bid} skipped={s.skipped}")
 
-    summary = run_pass(engine, chosen, data.markets, D(str(count)), max_new, progress)
+    summary = run_pass(
+        engine, chosen, data.markets, D(str(count)), max_new, progress, funded(engine)
+    )
     result = {
         "ts": started,
         "seconds": round(time.time() - started),
         "selection": {"min_volume_24h": min_volume, "top": top, "chosen": len(chosen)},
         "pass": asdict(summary),
         "account": report(engine, markets),
-        "paper_cash": str(engine.venue.balance()),
+        "venue": venue,
+        "halted": engine.halt_reason,
+        # The key keeps its name on paper so existing run logs and the website still read it.
+        ("paper_cash" if venue == "paper" else "balance"): str(engine.venue.balance()),
     }
     record_run(journal, result)
     return result
@@ -170,7 +196,7 @@ def backtest(
 
 
 STRATEGY = Strategy(
-    name="nothing-ever-happens",
+    name=STRATEGY_NAME,
     description="buy NO at the bid on popular markets and hold to settlement",
     run=run,
     backtest=backtest,

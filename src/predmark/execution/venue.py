@@ -10,6 +10,9 @@ from .models import Book, Fill, OrderRequest, PlaceResult, VenueOrder
 
 class Venue(Protocol):
     name: str
+    # Which book of positions and orders this venue sees, e.g. "paper" or "kalshi-demo/2".
+    # A journal is bound to the first account it trades on.
+    account: str
 
     def book(self, ticker: str) -> Book: ...
 

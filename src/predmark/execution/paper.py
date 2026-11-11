@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from .fees import kalshi_fee
+from .fees import KALSHI_DIRECT_INCREMENT, kalshi_fee
 from .models import (
     Book,
     Fill,
@@ -33,7 +33,8 @@ FeeModel = Callable[[Decimal, Decimal, bool], Decimal]
 
 
 def default_fee(count: Decimal, price: Decimal, is_taker: bool) -> Decimal:
-    return kalshi_fee(count, price, is_taker)
+    """A direct Kalshi account's fee: the $0.0001 grid, multiplier 1."""
+    return kalshi_fee(count, price, is_taker, increment=KALSHI_DIRECT_INCREMENT)
 
 
 @dataclass
@@ -45,6 +46,7 @@ class _Resting:
 
 class PaperVenue:
     name = "paper"
+    account = "paper"
 
     def __init__(
         self,

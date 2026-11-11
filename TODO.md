@@ -27,7 +27,7 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 ### Trustworthy results
 
 - [ ] Publish the raw data behind each result. `data/` is gitignored, so nobody else can reproduce E001 or E002 from the repo. Each `results.json` records a dataset hash but not where the data lives. Push each dataset to a Hugging Face dataset or a bucket, pinned by that hash, and link it from the report.
-- [ ] Preregister the popular-markets version of Nothing Ever Happens as E004. The exploratory backtest (−4.5¢ per contract, 95% interval −8.9¢ to +0.3¢, 182 markets) reused E002's already-opened holdout. It needs its own preregistration and a holdout of markets that close after the preregistration is committed.
+- [ ] Preregister the popular-markets version of Nothing Ever Happens as E004. The exploratory backtest (−4.5¢ per contract, 95% interval −8.9¢ to +0.3¢, 182 markets) reused E002's already-opened holdout. It also charged one-contract fees on the cent grid, which overstates them by up to about 1¢ per contract. The backtest now uses the $0.0001 grid (2026-11-11), so E004's analysis gets the direct-account fee from the start. It needs its own preregistration and a holdout of markets that close after the preregistration is committed.
 
 ### Paper results that match backtests
 
@@ -36,10 +36,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### Execution engine
 
-- [ ] Run `KalshiVenue` against Kalshi's demo exchange. It has only been tested with mocks, and the `kalshi-demo-check` command went when the CLI was narrowed.
-  - Add demo as a venue option in the strategy runner.
-  - Test the full order lifecycle: place, fill, cancel, and the `reconcile()` check after a crash.
-  - Real money stays off (`CLAUDE.md`).
 - [ ] Look up fees per series. Paper fills charge every market a fee multiplier of 1, but Kalshi publishes `fee_type` and `fee_multiplier` per series. Use them in `PaperVenue` and the backtest.
 - [ ] Handle voided and cancelled markets. A held market that settles without a yes or no result goes into `unresolved` and stays open forever, which inflates capital at risk. Settle it at the venue's terms and report it.
 - [ ] Stop overlapping Modal runs. The scheduled `daily` and the manual `run` function can write the same journal at once. Take a lock file on the volume. Also delete the orphaned `nothing_ever_happens.sqlite` from the cancelled first run.
