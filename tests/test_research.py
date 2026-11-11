@@ -222,3 +222,110 @@ def test_on_topic_records_outrank_highly_cited_off_topic_ones(tmp_path):
     )
     lib.add(Record("Polymarket post", ["E F"], "2024-01-01", "http://c", None, "x", kind="blog"))
     assert [r["title"] for r in lib.ordered()] == ["Pricing", "Polymarket post", "Stone Age sites"]
+
+
+def _git_repo(tmp_path):
+    import subprocess
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+
+    def commit(files, msg="c"):
+        for name, text in files.items():
+            p = tmp_path / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text)
+        git("add", "-A")
+        git("commit", "-q", "-m", msg)
+
+    return commit
+
+
+def _trial(exp, prereg_text, split="dev"):
+    import hashlib
+
+    sha = hashlib.sha256(prereg_text.encode()).hexdigest()
+    return json.dumps({"experiment": exp, "split": split, "prereg_sha256": sha}) + "\n"
+
+
+EXP = "research/experiments/E009-x/"
+
+
+def test_integrity_passes_when_prereg_precedes_results(tmp_path):
+    from predmark.research.integrity import check_integrity
+
+    commit = _git_repo(tmp_path)
+    commit({EXP + "preregistration.md": "plan"})
+    commit({EXP + "results.json": "{}", "research/trials.jsonl": _trial("E009", "plan")})
+    commit({"research/trials.jsonl": _trial("E009", "plan") + _trial("E009", "plan", "holdout")})
+    assert check_integrity(tmp_path) == []
+
+
+def test_integrity_flags_an_edited_ledger_line(tmp_path):
+    from predmark.research.integrity import check_ledger_append_only
+
+    commit = _git_repo(tmp_path)
+    commit({"research/trials.jsonl": '{"a": 1}\n{"b": 2}\n'})
+    commit({"research/trials.jsonl": '{"a": 1}\n{"b": 3}\n{"c": 4}\n'})
+    commit({"research/trials.jsonl": '{"a": 1}\n{"b": 3}\n{"c": 4}\n{"d": 5}\n'})
+    problems = check_ledger_append_only(tmp_path)
+    assert len(problems) == 1 and "removes or changes" in problems[0]
+
+
+def test_integrity_flags_a_deleted_ledger(tmp_path):
+    import subprocess
+
+    from predmark.research.integrity import check_ledger_append_only
+
+    commit = _git_repo(tmp_path)
+    commit({"research/trials.jsonl": '{"a": 1}\n'})
+    subprocess.run(["git", "-C", str(tmp_path), "rm", "-q", "research/trials.jsonl"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "rm"], check=True)
+    assert len(check_ledger_append_only(tmp_path)) == 1
+
+
+def test_integrity_flags_results_in_the_same_commit_as_prereg(tmp_path):
+    from predmark.research.integrity import check_prereg_order
+
+    commit = _git_repo(tmp_path)
+    commit({EXP + "preregistration.md": "plan", EXP + "results.json": "{}"})
+    problems = check_prereg_order(tmp_path)
+    assert len(problems) == 1 and "not committed after" in problems[0]
+
+
+def test_integrity_flags_results_committed_before_prereg(tmp_path):
+    from predmark.research.integrity import check_prereg_order
+
+    commit = _git_repo(tmp_path)
+    commit({EXP + "results.json": "{}"})
+    commit({EXP + "preregistration.md": "plan"})
+    assert len(check_prereg_order(tmp_path)) == 1
+
+
+def test_integrity_flags_a_prereg_edited_after_evaluation(tmp_path):
+    from predmark.research.integrity import check_prereg_order
+
+    commit = _git_repo(tmp_path)
+    commit({EXP + "preregistration.md": "plan"})
+    commit({EXP + "results.json": "{}", "research/trials.jsonl": _trial("E009", "plan")})
+    commit({EXP + "preregistration.md": "a better plan"})
+    problems = check_prereg_order(tmp_path)
+    assert len(problems) == 1 and "amendments.md" in problems[0]
+
+
+def test_integrity_flags_a_failing_paper(tmp_path):
+    from predmark.research.integrity import check_integrity
+
+    commit = _git_repo(tmp_path)
+    commit(
+        {
+            "research/literature/library.jsonl": "",
+            "research/papers/P009-x/paper.md": "As E042 shows [@nobody].",
+        }
+    )
+    problems = check_integrity(tmp_path)
+    assert len(problems) == 2 and all(p.startswith("research/papers/P009-x") for p in problems)

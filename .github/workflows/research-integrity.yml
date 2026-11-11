@@ -1,0 +1,33 @@
+# Enforce the research rules in CLAUDE.md that git history can prove:
+# research/trials.jsonl only grows, each results.json is committed after its preregistration.md,
+# and every paper in research/papers/ passes check-paper.
+name: research-integrity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The checks read the whole history. A shallow clone fails them.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync
+      - run: uv run python -m predmark.research check-integrity
+      - run: uv run pytest -q tests/test_research.py
