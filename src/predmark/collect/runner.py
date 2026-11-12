@@ -13,6 +13,7 @@ from .base import Dataset
 
 
 def out_dir(state_dir: str | Path, name: str) -> Path:
+    """Return the output directory for collector `name` under `state_dir`."""
     return Path(state_dir) / "collect" / name
 
 
@@ -38,6 +39,10 @@ def run_one(
 
 
 def run_all(state_dir: str | Path, log: Callable[[str], None] = print) -> dict[str, Any]:
+    """Run every registered collector and return each one's run record by name.
+
+    A failing collector is logged and recorded as not ok. The others still run.
+    """
     out: dict[str, Any] = {}
     for name in names():
         log(f"== collect {name}")

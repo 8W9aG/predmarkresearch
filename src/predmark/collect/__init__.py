@@ -21,15 +21,18 @@ MODULES = ("jev_forecasts", "kalshi_listing")
 
 
 def registry() -> dict[str, Collector]:
+    """Import every module in MODULES and return its collector by name."""
     collectors = [import_module(f"{__name__}.{m}").COLLECTOR for m in MODULES]
     return {c.name: c for c in collectors}
 
 
 def names() -> list[str]:
+    """Return the names of all registered collectors."""
     return list(registry())
 
 
 def get(name: str) -> Collector:
+    """Return the collector called `name`, or raise KeyError listing the known names."""
     found = registry()
     if name not in found:
         raise KeyError(f"unknown collector {name!r}; known: {', '.join(found)}")

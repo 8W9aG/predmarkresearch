@@ -42,6 +42,7 @@ MARGINS = (Decimal("0"), Decimal("0.02"), Decimal("0.05"), Decimal("0.10"))
 
 
 def split_of(ts: str) -> str | None:
+    """Return the split whose date window holds the timestamp, or None."""
     day = ts[:10]
     return next((s for s, (lo, hi) in WINDOWS.items() if lo <= day <= hi), None)
 
@@ -59,6 +60,10 @@ def fee(price: float, multiplier: float = 1.0) -> float:
 
 
 def bet_net(bet: str, y: float, bid: float, ask: float, multiplier: float = 1.0) -> float:
+    """Return the net P&L of one contract after the taker fee.
+
+    A yes bet buys Yes at the ask. A no bet buys No at 1 - bid.
+    """
     if bet == "yes":
         return y - ask - fee(ask, multiplier)
     return (1 - y) - (1 - bid) - fee(bid, multiplier)
@@ -113,6 +118,7 @@ def build(
 
 
 def with_net(bets: pd.DataFrame) -> pd.DataFrame:
+    """Add net P&L columns at the base fee and at the series fee, and the yes-side price."""
     out = bets.copy()
     rows = out.itertuples()
     out["net"] = [bet_net(b.bet, b.y, b.bid, b.ask) for b in rows]
@@ -124,6 +130,7 @@ def with_net(bets: pd.DataFrame) -> pd.DataFrame:
 
 
 def logistic(X: np.ndarray, y: np.ndarray, iterations: int = 50) -> np.ndarray:
+    """Return logistic regression coefficients, fitted by Newton's method."""
     beta = np.zeros(X.shape[1])
     for _ in range(iterations):
         mu = 1 / (1 + np.exp(-np.clip(X @ beta, -30, 30)))
@@ -137,12 +144,17 @@ def logistic(X: np.ndarray, y: np.ndarray, iterations: int = 50) -> np.ndarray:
 
 
 def mean_ci(df: pd.DataFrame, column: str, cluster: str) -> tuple[float, float]:
+    """Return a 95% cluster-bootstrap interval for the mean of a column."""
     values = df[column].to_numpy()
     draws = cluster_bootstrap(lambda i: values[i].mean(), df[cluster].to_numpy(), N_BOOT)
     return interval(draws)
 
 
 def h1(bets: pd.DataFrame) -> dict:
+    """Test H1: settled bets have a positive mean net P&L, clustered by event.
+
+    H1 is not supported with fewer than MIN_BETS bets, whatever the interval.
+    """
     out: dict = {
         "n_bets": int(len(bets)),
         "events": int(bets["event"].nunique()) if len(bets) else 0,
@@ -162,6 +174,7 @@ def h1(bets: pd.DataFrame) -> dict:
 
 
 def h2(resolved: pd.DataFrame) -> dict:
+    """Test H2: Jev's logit adds to the market mid in predicting the outcome."""
     sub = resolved.dropna(subset=["mid"])
     out: dict = {"n": int(len(sub)), "events": int(sub["event"].nunique()) if len(sub) else 0}
     if len(sub) < 10 or sub["event"].nunique() < 2:
@@ -188,10 +201,12 @@ def h2(resolved: pd.DataFrame) -> dict:
 
 
 def group(bets: pd.DataFrame) -> dict:
+    """Return the count and mean net P&L of a set of bets."""
     return {"n": int(len(bets)), "mean_net": float(bets["net"].mean()) if len(bets) else None}
 
 
 def calibration(p: np.ndarray, y: np.ndarray) -> dict:
+    """Return the Brier score, log loss, and calibration table."""
     return {
         "brier": brier(p, y),
         "log_loss": log_loss(p, y),
@@ -222,6 +237,7 @@ def at_margin(resolved: pd.DataFrame, margin: Decimal) -> pd.DataFrame:
 
 
 def evaluate(df: pd.DataFrame, flow: dict, spend_usd: float | None = None) -> dict:
+    """Return H1, H2, calibration, and breakdown results for one split."""
     resolved = df[df["y"].notna()]
     bets = with_net(resolved[resolved["bet"].notna()])
     quoted = resolved.dropna(subset=["mid"])
@@ -259,16 +275,22 @@ def evaluate(df: pd.DataFrame, flow: dict, spend_usd: float | None = None) -> di
 
 
 def read_jsonl(path: Path) -> list[dict]:
+    """Return the rows of a JSON Lines file, or an empty list if it is missing."""
     return (
         [json.loads(x) for x in path.read_text().splitlines() if x.strip()] if path.exists() else []
     )
 
 
 def spend(cost: list[dict], split: str) -> float:
+    """Return the Jev spend in dollars logged during the split's window."""
     return float(sum(Decimal(c.get("cost_usd", "0")) for c in cost if split_of(c["ts"]) == split))
 
 
 def main(argv: list[str] | None = None, today: date | None = None) -> int:
+    """Evaluate one split, record it in the trial ledger, and update results.json.
+
+    The holdout is refused before CUTOFF, and the ledger refuses a second holdout claim.
+    """
     import argparse
 
     parser = argparse.ArgumentParser()

@@ -49,6 +49,10 @@ DEMO_SUBACCOUNTS = {"demo-check": 1, "nothing-ever-happens": 2}
 
 
 def demo_subaccount(name: str) -> int:
+    """Return the demo subaccount number assigned to a strategy or tool.
+
+    Raises KeyError if the name has no entry in `DEMO_SUBACCOUNTS`.
+    """
     if name not in DEMO_SUBACCOUNTS:
         raise KeyError(
             f"{name} has no demo subaccount. Create and fund one, then add it to DEMO_SUBACCOUNTS."
@@ -57,7 +61,7 @@ def demo_subaccount(name: str) -> int:
 
 
 class LiveTradingNotArmed(RuntimeError):
-    pass
+    """Production trading was requested without both arming switches."""
 
 
 def sign_request(private_key: Any, timestamp_ms: str, method: str, path: str) -> str:
@@ -95,6 +99,7 @@ def parse_book(ticker: str, payload: dict[str, Any], ts: float) -> Book:
 
 
 def parse_ts(value: str | None) -> float:
+    """Convert an ISO 8601 timestamp to Unix seconds, or 0.0 if it is missing."""
     if not value:
         return 0.0
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
@@ -118,6 +123,8 @@ def _venue_order(o: dict[str, Any]) -> VenueOrder:
 
 
 class KalshiVenue:
+    """Kalshi venue adapter for one subaccount, on the demo exchange by default."""
+
     name = "kalshi"
     # Order and position listings trailed the matching engine by up to 0.7 s on demo (2026-11-11).
     listing_lag_seconds = 2.0
@@ -132,6 +139,10 @@ class KalshiVenue:
         timeout: float = 10.0,
         subaccount: int = 0,
     ):
+        """Set up a signed HTTP client for one subaccount.
+
+        Raises LiveTradingNotArmed for env="prod" unless both arming switches are set.
+        """
         if env not in URLS:
             raise ValueError(f"unknown env {env}")
         if not 0 <= subaccount <= MAX_SUBACCOUNT:
@@ -155,6 +166,7 @@ class KalshiVenue:
     def from_env(
         cls, env: str = "demo", allow_live: bool = False, subaccount: int = 0
     ) -> KalshiVenue:
+        """Build a venue from `KALSHI_KEY_ID` and the PEM key at `KALSHI_PRIVATE_KEY_PATH`."""
         key_id = os.environ["KALSHI_KEY_ID"]
         pem = Path(os.environ["KALSHI_PRIVATE_KEY_PATH"]).read_bytes()
         key = serialization.load_pem_private_key(pem, password=None)
@@ -190,10 +202,17 @@ class KalshiVenue:
                 return
 
     def book(self, ticker: str) -> Book:
+        """Return the order book for a ticker, up to 25 levels a side."""
         ts = time.time()
         return parse_book(ticker, self._get(f"/markets/{ticker}/orderbook", {"depth": 25}), ts)
 
     def place(self, req: OrderRequest) -> PlaceResult:
+        """Send an order to Kalshi and return its status.
+
+        Raises VenueUnknown on a transport error or HTTP 5xx, because the order may have reached
+        the exchange. Raises VenueRejected on HTTP 4xx, or if a size or price has too many
+        decimal places.
+        """
         body = {
             "ticker": req.ticker,
             "side": req.side.value,
@@ -228,6 +247,10 @@ class KalshiVenue:
         return PlaceResult(data["order_id"], status, filled, remaining)
 
     def cancel(self, order_id: str, ticker: str) -> None:
+        """Cancel an order on Kalshi.
+
+        Raises VenueUnknown on a transport error or HTTP 5xx, and VenueRejected on HTTP 4xx.
+        """
         path = f"/portfolio/events/orders/{order_id}"
         try:
             resp = self.http.delete(
@@ -243,20 +266,24 @@ class KalshiVenue:
             raise VenueRejected(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
     def open_orders(self) -> list[VenueOrder]:
+        """Return this subaccount's resting orders."""
         rows = self._pages("/portfolio/orders", "orders", {"status": "resting"})
         return [_venue_order(o) for o in rows]
 
     def find_order(self, client_order_id: str, since_ts: float) -> VenueOrder | None:
+        """Find an order by client order id, in any state, created since `since_ts`."""
         for o in self._pages("/portfolio/orders", "orders", {"min_ts": int(since_ts)}):
             if o.get("client_order_id") == client_order_id:
                 return _venue_order(o)
         return None
 
     def positions(self) -> dict[str, Decimal]:
+        """Return this subaccount's position in contracts per ticker."""
         rows = self._pages("/portfolio/positions", "market_positions", {})
         return {p["ticker"]: D(p["position_fp"]) for p in rows}
 
     def fills(self, since_ts: float) -> list[Fill]:
+        """Return this subaccount's fills since `since_ts`, in Unix seconds."""
         out = []
         for f in self._pages("/portfolio/fills", "fills", {"min_ts": int(since_ts)}):
             out.append(
@@ -279,8 +306,11 @@ class KalshiVenue:
         return D(self._get("/portfolio/balance")["balance_dollars"])
 
     def shard_balances(self) -> dict[int, Decimal]:
-        """Cash per exchange index (shard). Kalshi funds each one separately, and an order on a
-        shard without cash is refused with `insufficient_shard_balance`."""
+        """Return cash per exchange index (shard).
+
+        Kalshi funds each shard separately, and an order on a shard without cash is refused with
+        `insufficient_shard_balance`.
+        """
         path = "/portfolio/subaccounts/balances"
         rows = self.http.get(path, headers=self._headers("GET", path))
         rows.raise_for_status()

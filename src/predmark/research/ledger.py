@@ -16,14 +16,16 @@ DEFAULT_PATH = Path("research/trials.jsonl")
 
 
 class HoldoutAlreadyUsed(RuntimeError):
-    pass
+    """Error for a second holdout evaluation of one experiment."""
 
 
 def file_sha256(path: str | Path) -> str:
+    """Return the SHA-256 hex digest of a file's bytes."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def read_trials(path: str | Path = DEFAULT_PATH) -> list[dict[str, Any]]:
+    """Return every ledger entry in file order, or an empty list if there is no ledger."""
     p = Path(path)
     if not p.exists():
         return []
@@ -31,10 +33,15 @@ def read_trials(path: str | Path = DEFAULT_PATH) -> list[dict[str, Any]]:
 
 
 def holdout_used(experiment: str, path: str | Path = DEFAULT_PATH) -> bool:
+    """Return True if the ledger has a holdout entry for `experiment`."""
     return any(t["experiment"] == experiment and t["split"] == "holdout" for t in read_trials(path))
 
 
 def claim_holdout(experiment: str, path: str | Path = DEFAULT_PATH) -> None:
+    """Raise HoldoutAlreadyUsed if `experiment` has already used its holdout.
+
+    This only checks the ledger. A `record_trial` call with the `holdout` split records the use.
+    """
     if holdout_used(experiment, path):
         raise HoldoutAlreadyUsed(
             f"{experiment} has already looked at its holdout. Register a new experiment, and "
@@ -50,6 +57,11 @@ def record_trial(
     summary: dict[str, Any],
     path: str | Path = DEFAULT_PATH,
 ) -> dict[str, Any]:
+    """Append one evaluation to the ledger and return the entry.
+
+    `split` must be `dev` or `holdout`. The entry holds the preregistration's hash, so a later
+    edit to that file is detectable.
+    """
     if split not in {"dev", "holdout"}:
         raise ValueError(f"unknown split {split}")
     entry = {

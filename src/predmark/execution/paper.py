@@ -45,6 +45,8 @@ class _Resting:
 
 
 class PaperVenue:
+    """Simulated venue that fills orders against books from `book_source`."""
+
     name = "paper"
     account = "paper"
 
@@ -55,6 +57,7 @@ class PaperVenue:
         fee_model: FeeModel = default_fee,
         clock: Callable[[], float] | None = None,
     ):
+        """Start with `cash` dollars and no positions or orders."""
         import time
 
         self.book_source = book_source
@@ -67,6 +70,7 @@ class PaperVenue:
         self._pos: dict[str, Decimal] = {}
 
     def settle(self, ticker: str, yes_value: Decimal) -> None:
+        """Pay out a market's position at `yes_value` dollars per YES contract."""
         q = self._pos.pop(ticker, D(0))
         self.cash += q * yes_value
 
@@ -77,6 +81,7 @@ class PaperVenue:
         self._pos = {t: p.contracts for t, p in ledger.markets.items() if p.contracts != 0}
 
     def book(self, ticker: str) -> Book:
+        """Return the source book for a ticker, after filling resting orders it crosses."""
         book = self.book_source(ticker)
         self._sweep(book)
         return book
@@ -119,6 +124,11 @@ class PaperVenue:
         return opening * (1 - req.price) - closing * req.price + fee
 
     def place(self, req: OrderRequest) -> PlaceResult:
+        """Match an order against the current book and return its status.
+
+        Raises VenueRejected for an insufficient balance, a post-only order that would cross, or
+        a fill-or-kill order that cannot fill in full. Only a good-till-canceled remainder rests.
+        """
         book = self.book(req.ticker)
         if self._required_cash(req) > self.balance():
             raise VenueRejected("insufficient balance")
@@ -187,12 +197,14 @@ class PaperVenue:
         )
 
     def cancel(self, order_id: str, ticker: str) -> None:
+        """Cancel a resting order. Raises VenueRejected if it is not open."""
         r = self._resting.pop(order_id, None)
         if r is None:
             raise VenueRejected("order not open")
         self._update(r, OrderStatus.CANCELED)
 
     def open_orders(self) -> list[VenueOrder]:
+        """Return the resting orders."""
         return [
             VenueOrder(
                 r.order_id,
@@ -207,9 +219,11 @@ class PaperVenue:
         ]
 
     def find_order(self, client_order_id: str, since_ts: float) -> VenueOrder | None:
+        """Find an order in any state by client order id. `since_ts` is ignored."""
         return self._all.get(client_order_id)
 
     def positions(self) -> dict[str, Decimal]:
+        """Return the position in contracts per ticker."""
         return dict(self._pos)
 
     def fills(self, since_ts: float) -> list[Fill]:

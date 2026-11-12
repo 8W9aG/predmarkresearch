@@ -18,6 +18,7 @@ from ..data.kalshi import KalshiData
 
 
 def to_ts(value: str) -> int:
+    """Return the Unix timestamp in seconds of an ISO 8601 time. A trailing Z means UTC."""
     return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
 
 

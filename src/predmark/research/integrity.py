@@ -41,6 +41,7 @@ def _lines(text: str | None) -> list[str]:
 
 
 def check_shallow(repo: Path) -> list[str]:
+    """Report a problem if `repo` is a shallow clone."""
     out = _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip()
     if out == "true":
         return ["the clone is shallow: fetch the full history (fetch-depth: 0)"]
@@ -120,6 +121,7 @@ def check_papers(
     library: Path = LIBRARY_PATH,
     experiments_dir: Path = EXPERIMENTS_DIR,
 ) -> list[str]:
+    """Run `check_paper` on every `paper.md` under `papers_dir`."""
     problems = []
     for paper in sorted((repo / papers_dir).glob("*/paper.md")):
         for problem in check_paper(paper, repo / library, repo / experiments_dir):
@@ -128,6 +130,10 @@ def check_papers(
 
 
 def check_integrity(repo: str | Path = ".") -> list[str]:
+    """Run every integrity check on the git repo that holds `repo`.
+
+    A shallow clone stops the checks at once, since the others need the full history.
+    """
     root = Path(_git(Path(repo), "rev-parse", "--show-toplevel").stdout.strip())
     problems = check_shallow(root)
     if problems:

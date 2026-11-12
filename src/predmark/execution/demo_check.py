@@ -47,26 +47,34 @@ STRATEGY = "demo-check"
 
 @dataclass
 class Step:
+    """Outcome of one lifecycle step."""
+
     name: str
     ok: bool
     detail: str
 
 
 class CheckFailed(Exception):
-    pass
+    """A lifecycle step did not meet its condition."""
 
 
 class LostResponse:
     """Sends each order to the real venue, then reports the send outcome as unknown."""
 
     def __init__(self, venue: Venue):
+        """Wrap a venue whose order responses are to be lost."""
         self._venue = venue
         self.name = venue.name
 
     def __getattr__(self, attr: str) -> Any:
+        """Pass every other attribute through to the wrapped venue."""
         return getattr(self._venue, attr)
 
     def place(self, req: OrderRequest) -> PlaceResult:
+        """Send the order to the real venue, then raise VenueUnknown.
+
+        The order does reach the venue, so it may rest or fill.
+        """
         self._venue.place(req)
         raise VenueUnknown("response lost on purpose by demo_check")
 
@@ -227,6 +235,10 @@ def run_lifecycle(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the demo lifecycle check and return 0 if every step passed.
+
+    It trades on the Kalshi demo exchange and writes a result file to `data/demo-check/`.
+    """
     from ..data.kalshi import KalshiData
     from ..http import ReadClient
     from .kalshi import URLS, KalshiVenue, demo_subaccount

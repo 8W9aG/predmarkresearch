@@ -31,6 +31,7 @@ def series_of(event_ticker: str) -> str:
 
 
 def pull_volume(dest: Path) -> None:
+    """Copy forecasts.jsonl and cost.jsonl from the Modal volume into `dest`."""
     import modal
 
     vol = modal.Volume.from_name(VOLUME)
@@ -39,6 +40,10 @@ def pull_volume(dest: Path) -> None:
 
 
 def pull_outcomes(dest: Path, split: str) -> dict:
+    """Write outcomes for the split's tickers and fees for every series, and return counts.
+
+    Only the split's outcomes are fetched. Series rows cover all forecast events.
+    """
     from predmark.data.kalshi import KalshiData
 
     rows = [json.loads(x) for x in (dest / "forecasts.jsonl").read_text().splitlines() if x]
@@ -63,6 +68,10 @@ def pull_outcomes(dest: Path, split: str) -> dict:
 
 
 def main(argv: list[str] | None = None, today: date | None = None) -> int:
+    """Fetch the forecasts and one split's outcomes, write a manifest, and return 0.
+
+    Holdout outcomes are refused before CUTOFF.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("split", choices=("dev", "holdout"))
     parser.add_argument(

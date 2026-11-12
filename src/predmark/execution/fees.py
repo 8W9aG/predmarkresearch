@@ -49,6 +49,11 @@ def kalshi_fee(
     multiplier: Decimal = Decimal(1),
     increment: Decimal = KALSHI_CENT,
 ) -> Decimal:
+    """Return the Kalshi fee in dollars for one fill, rounded up to `increment`.
+
+    Makers pay nothing unless `fee_type` is "quadratic_with_maker_fees". `multiplier` is
+    the series fee multiplier.
+    """
     if is_taker:
         rate = KALSHI_TAKER
     elif fee_type == "quadratic_with_maker_fees":
@@ -60,6 +65,10 @@ def kalshi_fee(
 
 
 def polymarket_fee(count: Decimal, price: Decimal, category: str, is_taker: bool = True) -> Decimal:
+    """Return the Polymarket fee in dollars for one fill, with no rounding.
+
+    Makers pay nothing. An unknown `category` raises KeyError.
+    """
     if not is_taker:
         return D(0)
     return count * POLYMARKET_TAKER_RATES[category] * price * (1 - price)
