@@ -9,10 +9,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ..lit.library import DEFAULT_PATH as LIBRARY_PATH
 from .ledger import DEFAULT_PATH as LEDGER_PATH
 from .ledger import file_sha256, read_trials
-from .papers import check_paper
+from .papers import LIBRARY_PATH, check_paper
 
 EXPERIMENTS_DIR = Path("research/experiments")
 PAPERS_DIR = Path("research/papers")

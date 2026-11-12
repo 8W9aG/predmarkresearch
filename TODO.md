@@ -43,7 +43,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### Research backlog
 
-- [ ] Start the literature review with the user. 0 of 397 indexed records have been reviewed (`python -m predmark.lit next`). Paper P001 has no citations because of this.
 - [ ] Preregister maker-side entry as the next experiment, from `research/ideas.md`. E002 showed the loss is almost all spread, and resting at the bid instead of crossing it is the direct counter. Queue position is unknown, so the fill model must be conservative: fill only when the market trades through the price.
 
 ### Housekeeping

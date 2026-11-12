@@ -1,6 +1,6 @@
 """Command line: list, backtest, run, and inspect registered strategies.
 
-Literature and research tools are not here. Agents run them with `python -m predmark.lit` and
+Literature and research tools are not here. Agents run them with `python scripts/lit.py` and
 `python -m predmark.research`.
 """
 

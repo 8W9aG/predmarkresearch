@@ -12,14 +12,14 @@ The library is the index. Each paper that gets a full review also gets one page 
 
 ## Update the index
 
-Run `uv run python -m predmark.lit harvest`, which regenerates `research/literature/INDEX.md`. Report any source
+Run `uv run --env-file .env python scripts/lit.py harvest`, which regenerates `research/literature/INDEX.md`. Report any source
 in its `failed` list, because a failed source means the index has a gap.
 
 ## Go through papers
 
 Papers are reviewed one at a time with the user, in index order:
 
-1. `uv run python -m predmark.lit next` shows the next unreviewed record.
+1. `uv run python scripts/lit.py next` shows the next unreviewed record.
 2. Present it and discuss it with the user. Fetch the full text if they want to go deeper.
 3. For a full review, read the full text and write `research/literature/reviews/<short-slug>.md`.
    Follow the existing pages, with these parts:
@@ -35,7 +35,7 @@ Papers are reviewed one at a time with the user, in index order:
 
    Add a row to `reviews/README.md`.
 4. Set the status to reflect what was actually read, then move on:
-   `uv run python -m predmark.lit review KEY --status rejected|relevant|abstract_read|full_text_read`.
+   `uv run python scripts/lit.py review KEY --status rejected|relevant|abstract_read|full_text_read`.
 
 Never mark a record as read on the basis of a search snippet or another paper's description of it.
 If a paper suggests a testable idea, add it to `research/ideas.md` with the data it needs and how it

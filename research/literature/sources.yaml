@@ -1,4 +1,4 @@
-# Searches run by `predmark lit harvest`. Add a feed or query whenever a review finds a good source.
+# Searches run by `uv run --env-file .env python scripts/lit.py harvest`. Add a feed or query whenever a review finds a good source.
 lookback_days: 1460
 per_query: 40
 
@@ -22,9 +22,9 @@ semantic_scholar:
   - prediction market efficiency Polymarket Kalshi
   - forecasting language models prediction markets
 
+# Kalshi News (news.kalshi.com) was dropped on 2026-11-11. Its feed returns 404, and its posts are
+# market odds coverage, not research.
 feeds:
-  - name: Kalshi News
-    url: https://news.kalshi.com/feed
   - name: The Capital Spectator
     url: https://www.capitalspectator.com/feed/
   - name: Astral Codex Ten
