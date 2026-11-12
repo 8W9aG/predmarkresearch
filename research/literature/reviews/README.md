@@ -2,7 +2,7 @@
 
 One page per paper or post. Each page has the citation, a summary written from the source, the places where the claims go beyond the evidence, and a separate discussion of how this repo can or can't use the work.
 
-Records come from `research/literature/library.jsonl` in index order (`python -m predmark.lit next`). After a page is written, the record's status in the library shows what was actually read: `abstract_read` or `full_text_read`. Each page's **Read** line says which version and which parts.
+Records come from `research/literature/library.jsonl` in index order (`python scripts/lit.py next`). After a page is written, the record's status in the library shows what was actually read: `abstract_read` or `full_text_read`. Each page's **Read** line says which version and which parts.
 
 Status marks how the work relates to this repo:
 

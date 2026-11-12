@@ -32,8 +32,8 @@ Agent workflows live in `.claude/skills/`. In Claude Code, run:
 The agents call these tools, which are not part of the CLI:
 
 ```sh
-uv run python -m predmark.lit harvest        # arXiv, OpenAlex, Semantic Scholar, blog feeds
-uv run python -m predmark.lit next           # next unreviewed record
+uv run --env-file .env python scripts/lit.py harvest  # arXiv, OpenAlex, Semantic Scholar, feeds
+uv run python scripts/lit.py next            # next unreviewed record
 uv run python -m predmark.research trials    # every evaluation ever run
 uv run python -m predmark.research check-paper research/papers/P001-.../paper.md
 uv run python -m predmark.research check-integrity   # the research rules CI enforces
@@ -221,13 +221,13 @@ Not built yet: websocket feeds and per-series tick and fee lookup. The order boo
 src/predmark/cli.py      list, backtest, run, status
 src/predmark/backtest/   panel download and strategy backtests
 src/predmark/strategies/ registry, shared paper helpers, runner, strategies
-src/predmark/lit/        literature sources and library, for the /lit-review agent
 src/predmark/data/       Kalshi and Polymarket market data, book recorder
 src/predmark/research/   metrics, trial ledger, paper checks
 src/predmark/execution/  engine, risk, fees, paper and Kalshi venues
 deploy/modal_app.py      daily paper run of every strategy on Modal
 src/predmark/site/       static website builder
-research/literature/     INDEX.md, library.jsonl, sources.yaml
+scripts/lit.py           literature sources and library, for the /lit-review skill
+research/literature/     INDEX.md, library.jsonl, sources.yaml, reviews/
 research/experiments/    one directory per experiment
 research/papers/         papers
 research/trials.jsonl    append-only record of evaluations
