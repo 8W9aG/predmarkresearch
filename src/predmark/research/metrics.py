@@ -13,15 +13,18 @@ import numpy as np
 
 
 def brier(p: np.ndarray, y: np.ndarray) -> float:
+    """Return the Brier score: the mean squared error of `p` against outcomes `y`."""
     return float(np.mean((p - y) ** 2))
 
 
 def log_loss(p: np.ndarray, y: np.ndarray, eps: float = 1e-6) -> float:
+    """Return the mean log loss of `p` against outcomes `y`, with `p` clipped to [eps, 1 - eps]."""
     q = np.clip(p, eps, 1 - eps)
     return float(-np.mean(y * np.log(q) + (1 - y) * np.log(1 - q)))
 
 
 def logit(p: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    """Return the log odds of `p`, clipped to [eps, 1 - eps] first."""
     q = np.clip(p, eps, 1 - eps)
     return np.log(q / (1 - q))
 
@@ -46,6 +49,10 @@ def recalibration(p: np.ndarray, y: np.ndarray, iterations: int = 50) -> tuple[f
 
 
 def calibration_table(p: np.ndarray, y: np.ndarray, bins: int = 10) -> list[dict[str, float]]:
+    """Return the count, mean price, and win rate in each of `bins` equal-width bins.
+
+    Empty bins are left out.
+    """
     edges = np.linspace(0, 1, bins + 1)
     idx = np.minimum(np.digitize(p, edges[1:-1], right=False), bins - 1)
     rows = []
@@ -65,6 +72,10 @@ def calibration_table(p: np.ndarray, y: np.ndarray, bins: int = 10) -> list[dict
 
 
 def ece(p: np.ndarray, y: np.ndarray, bins: int = 10) -> float:
+    """Return the expected calibration error over equal-width bins.
+
+    This is the count-weighted mean gap between mean price and win rate.
+    """
     rows = calibration_table(p, y, bins)
     total = sum(r["n"] for r in rows)
     return float(sum(r["n"] / total * abs(r["mean_price"] - r["win_rate"]) for r in rows))
@@ -89,6 +100,7 @@ def cluster_bootstrap(
 
 
 def interval(draws: np.ndarray, level: float = 0.95) -> tuple[float, float]:
+    """Return the equal-tailed percentile interval of `draws` at `level`."""
     alpha = (1 - level) / 2
     low, high = np.quantile(draws, [alpha, 1 - alpha])
     return float(low), float(high)

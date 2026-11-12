@@ -11,6 +11,7 @@ FETCHED = "data/site-state"
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Build the website, after an optional fetch of run logs, and return 0."""
     parser = argparse.ArgumentParser(prog="python -m predmark.site")
     parser.add_argument("--out", default="site")
     parser.add_argument("--state-dir", default="data/paper", help="where *.runs.jsonl are read")

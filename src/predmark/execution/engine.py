@@ -62,6 +62,8 @@ CREATE INDEX IF NOT EXISTS fills_order ON fills(order_id);
 
 
 class Engine:
+    """Single path from strategies to a venue, with risk checks and a write-ahead journal."""
+
     def __init__(
         self,
         venue: Venue,
@@ -72,8 +74,11 @@ class Engine:
         sleep: Callable[[float], None] = time.sleep,
         bind_account: bool = True,
     ):
-        """`bind_account=False` opens a journal without checking or recording its account. Only
-        offline readers that never call the venue should use it."""
+        """Open the engine on a venue and its journal.
+
+        `bind_account=False` opens a journal without checking or recording its account. Only
+        offline readers that never call the venue should use it.
+        """
         self.venue = venue
         self.sleep = sleep
         self.limits = limits or RiskLimits()
@@ -121,6 +126,7 @@ class Engine:
 
     @property
     def halt_reason(self) -> str | None:
+        """Reason the engine is halted, or None if it may trade."""
         if self.kill_file.exists():
             return f"kill file {self.kill_file} present"
         return self._meta("halted")
@@ -166,6 +172,11 @@ class Engine:
     # --- trading -------------------------------------------------------------------------
 
     def submit(self, req: OrderRequest) -> OrderStatus:
+        """Check, journal, and send an order, then return its status.
+
+        The order is journaled before it is sent. A halt or risk rejection is journaled and
+        never reaches the venue. An unknown send outcome halts the engine without cancelling.
+        """
         now = self.clock()
         reason = self.halt_reason
         if reason:
@@ -223,6 +234,11 @@ class Engine:
         return OrderStatus.REJECTED
 
     def cancel(self, client_order_id: str) -> bool:
+        """Cancel a journaled order and return whether the venue accepted the cancel.
+
+        Returns False for an unknown, unsent, or finished order. An unknown cancel outcome halts
+        the engine.
+        """
         row = self.db.execute(
             "SELECT * FROM orders WHERE client_order_id = ?", (client_order_id,)
         ).fetchone()
@@ -259,6 +275,11 @@ class Engine:
         return n
 
     def halt(self, reason: str, cancel: bool = True) -> None:
+        """Halt trading and record the reason in the journal.
+
+        The halt lasts across restarts until `resume()` succeeds. By default it also cancels
+        every open order at the venue.
+        """
         self._set_meta("halted", reason)
         self._event("halt", reason=reason)
         if cancel:
@@ -277,6 +298,10 @@ class Engine:
     # --- synchronisation -----------------------------------------------------------------
 
     def sync_fills(self) -> int:
+        """Copy new venue fills into the journal and ledger, and return how many were new.
+
+        Each read overlaps the last one by 60 seconds, and fills are deduplicated by fill id.
+        """
         cursor = float(self._meta("fills_cursor") or 0)
         new = 0
         latest = cursor
@@ -323,6 +348,11 @@ class Engine:
         self.check_daily_loss(books)
 
     def apply_settlement(self, ticker: str, yes_value: Decimal) -> None:
+        """Record a market's settlement and realize its P&L in the ledger.
+
+        `yes_value` is the payout of one YES contract in dollars. A repeat for the same ticker
+        is ignored.
+        """
         cur = self.db.execute(
             "INSERT OR IGNORE INTO settlements VALUES (?, ?, ?)",
             (ticker, str(yes_value), self.clock()),
@@ -434,6 +464,8 @@ class Engine:
 
 @dataclass(frozen=True)
 class VenueView:
+    """One snapshot of venue state, as read by `reconcile()`."""
+
     found: dict[str, VenueOrder | None]  # client order id -> venue order, for unresolved sends
     open_orders: dict[str, VenueOrder]
     positions: dict[str, Decimal]

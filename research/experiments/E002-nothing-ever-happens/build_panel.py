@@ -19,10 +19,12 @@ OUT = Path("data/e002")
 
 
 def h(text: str) -> str:
+    """Return a SHA-256 hex digest of the text, salted with the experiment ID."""
     return hashlib.sha256(f"E002:{text}".encode()).hexdigest()
 
 
 def ts(value: str) -> int:
+    """Return the Unix time in seconds for an ISO 8601 timestamp."""
     return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
 
 
@@ -44,6 +46,10 @@ def sample_events(markets: list[dict], budget: dict[str, int] = BUDGET) -> list[
 
 
 def universe(data: KalshiData) -> list[dict]:
+    """Return the sampled markets from the first N_SERIES series in hash order.
+
+    Writes manifest.json and universe.json, and reuses universe.json if it exists.
+    """
     path = OUT / "universe.json"
     if path.exists():
         return json.loads(path.read_text())
@@ -98,6 +104,11 @@ def universe(data: KalshiData) -> list[dict]:
 
 
 def main() -> int:
+    """Fetch hourly candles for each candidate's first 24 hours, and return 0.
+
+    Rows are appended to raw.jsonl. Tickers already there are skipped, and a failed
+    request is recorded in the row's error field.
+    """
     OUT.mkdir(parents=True, exist_ok=True)
     data = KalshiData(per_second=8)
     candidates = universe(data)

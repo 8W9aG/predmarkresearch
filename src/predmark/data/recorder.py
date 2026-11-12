@@ -15,6 +15,7 @@ from .polymarket import PolymarketData
 
 
 def kalshi_universe(data: KalshiData, top_n: int) -> list[str]:
+    """Return the tickers of the `top_n` open markets by 24-hour volume, from the first 3 pages."""
     markets = data.open_markets(limit_pages=3)
     markets.sort(key=lambda m: float(m.get("volume_24h_fp") or 0), reverse=True)
     return [m["ticker"] for m in markets[:top_n]]
@@ -29,6 +30,12 @@ def record(
     out_dir: str | Path = "data/books",
     log: Callable[[str], None] = print,
 ) -> None:
+    """Poll the order books of a venue's busiest markets and append them to daily gzip files.
+
+    Writes `<out_dir>/<venue>/<UTC date>.jsonl.gz`. The market list is refreshed every
+    `universe_refresh_seconds`. With `iterations=None` it runs until stopped. A failed book is
+    logged and skipped.
+    """
     if venue == "kalshi":
         kalshi = KalshiData(per_second=5)
         universe = lambda: kalshi_universe(kalshi, top_n)  # noqa: E731

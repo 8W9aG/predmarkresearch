@@ -27,6 +27,12 @@ def check_paper(
     library_path: str | Path = LIBRARY_PATH,
     experiments_dir: str | Path = "research/experiments",
 ) -> list[str]:
+    """Return the problems found in a paper's citations and experiment references.
+
+    Each citation must be in the library with a status of `abstract_read` or `full_text_read`.
+    Each experiment named must have a directory with a `results.json`. A `results.json` that is
+    not valid JSON raises an error.
+    """
     text = Path(path).read_text()
     statuses = read_statuses(library_path)
     problems = []

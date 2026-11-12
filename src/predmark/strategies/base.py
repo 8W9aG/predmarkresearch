@@ -40,6 +40,8 @@ PAPER_CASH = D(1_000_000)
 
 @dataclass(frozen=True)
 class Strategy:
+    """Registry entry for one strategy: its name, description, run and optional backtest."""
+
     name: str
     description: str
     run: Callable[..., dict[str, Any]]
@@ -56,6 +58,7 @@ class CachedBooks:
         self._last: tuple[str, Book, float] | None = None
 
     def __call__(self, ticker: str) -> Book:
+        """Return the cached book for `ticker` if under `ttl` seconds old, else fetch a new one."""
         now = self.clock()
         if self._last and self._last[0] == ticker and now - self._last[2] < self.ttl:
             return self._last[1]

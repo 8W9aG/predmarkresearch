@@ -33,17 +33,24 @@ def _call(venue: KalshiVenue, method: str, path: str, **kw: Any) -> Any:
 
 
 def balances(venue: KalshiVenue) -> list[dict[str, Any]]:
+    """Return cash per subaccount and exchange index, sorted by both."""
     rows = _call(venue, "GET", "/portfolio/subaccounts/balances")["subaccount_balances"]
     return sorted(rows, key=lambda r: (r["subaccount_number"], r["exchange_index"]))
 
 
 def create(venue: KalshiVenue) -> int:
+    """Create the next numbered demo subaccount and return its number."""
     return int(_call(venue, "POST", "/portfolio/subaccounts", json={})["subaccount_number"])
 
 
 def transfer_body(
     from_sub: int, from_shard: int, to_sub: int, to_shard: int, dollars: Decimal
 ) -> dict[str, Any]:
+    """Build the body of a cash transfer between subaccounts and exchange indexes.
+
+    Raises ValueError if `dollars` is not a positive multiple of $0.0001, a subaccount is out
+    of range, or the source and destination are the same.
+    """
     amount = dollars * CENTICENTS_PER_DOLLAR
     if amount <= 0 or amount != amount.to_integral_value():
         raise ValueError(f"{dollars} is not a positive multiple of $0.0001")
@@ -69,6 +76,10 @@ def transfer_body(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the demo account command line and return the exit code.
+
+    A transfer is sent to the demo venue once and never retried.
+    """
     parser = argparse.ArgumentParser(prog="python -m predmark.execution.demo_accounts")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("balances", help="cash per subaccount and exchange index")

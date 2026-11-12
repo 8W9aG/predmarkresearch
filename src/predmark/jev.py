@@ -44,6 +44,8 @@ class SpendCapExceeded(RuntimeError):
 
 
 class JevError(RuntimeError):
+    """Error status from the Jev API, with the status code and the server's detail."""
+
     def __init__(self, status: int, detail: Any):
         super().__init__(f"Jev HTTP {status}: {detail}")
         self.status = status
@@ -51,6 +53,7 @@ class JevError(RuntimeError):
 
 
 def noul(instructions: str, true: str | None = None, false: str | None = None) -> dict[str, Any]:
+    """Build a yes/no question. `true` and `false` optionally say when each answer applies."""
     q: dict[str, Any] = {"type": "noul", "instructions": instructions}
     if true is not None or false is not None:
         q["criteria"] = {k: v for k, v in (("true", true), ("false", false)) if v is not None}
@@ -75,6 +78,8 @@ def score(instructions: str, levels: list[str]) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class Result:
+    """Answers to one Jev request, with its token usage and cost."""
+
     model: str
     answers: dict[str, dict[str, Any]]
     input_tokens: int
@@ -101,13 +106,21 @@ OVERHEAD_TOKENS_PER_QUESTION = 64
 
 
 def upper_bound_cost(body: bytes, n_questions: int) -> Decimal:
-    """A cost no lower than the real one: a BPE token is at least one byte of UTF-8, plus the
-    server's own prompt tokens."""
+    """Return a cost no lower than the real one.
+
+    A BPE token is at least one byte of UTF-8, and the server adds its own prompt tokens.
+    """
     tokens = len(body) + OVERHEAD_TOKENS_PER_REQUEST + OVERHEAD_TOKENS_PER_QUESTION * n_questions
     return tokens * USD_PER_INPUT_TOKEN
 
 
 class JevClient:
+    """Jev client with a spend cap, retries only on rejections, and a JSONL cost log.
+
+    The API key comes from `api_key` or the `TYPESAFE_API_KEY` environment variable.
+    Each call appends a line to `log_path` unless it is None.
+    """
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -147,6 +160,7 @@ class JevClient:
         self.http.close()
 
     def models(self) -> list[dict[str, Any]]:
+        """Return the models the API key can use. This call uses no tokens."""
         return self._send("GET", "/v1/models").json()["models"]
 
     def ask(self, state: str | dict | list, questions: dict[str, dict[str, Any]]) -> Result:
@@ -271,6 +285,7 @@ def spend_summary(log_path: Path | str = DEFAULT_LOG) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the command-line tool: list models, ping the API, or summarise the cost log."""
     import argparse
 
     parser = argparse.ArgumentParser(prog="python -m predmark.jev")

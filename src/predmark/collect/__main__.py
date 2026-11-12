@@ -11,6 +11,7 @@ from .runner import run_all, run_one
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the collect command line and return the exit code."""
     parser = argparse.ArgumentParser(prog="python -m predmark.collect")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")

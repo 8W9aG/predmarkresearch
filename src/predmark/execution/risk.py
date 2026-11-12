@@ -22,10 +22,13 @@ class MarketPosition:
 
 @dataclass
 class Ledger:
+    """Positions per market and realized P&L, built from fills and settlements."""
+
     markets: dict[str, MarketPosition] = field(default_factory=dict)
     realized: Decimal = D(0)
 
     def apply(self, fill: Fill) -> None:
+        """Add a fill to its market's contracts, cash, and fees."""
         pos = self.markets.setdefault(fill.ticker, MarketPosition())
         sign = 1 if fill.side is Side.BUY else -1
         pos.contracts += sign * fill.count
@@ -33,11 +36,13 @@ class Ledger:
         pos.fees += fill.fee
 
     def settle(self, ticker: str, yes_value: Decimal) -> None:
+        """Close a market at `yes_value` dollars per YES contract and realize its P&L."""
         pos = self.markets.pop(ticker, None)
         if pos is not None:
             self.realized += pos.contracts * yes_value - pos.cash
 
     def contracts(self, ticker: str) -> Decimal:
+        """Return the net YES contracts held in a ticker, negative when short."""
         pos = self.markets.get(ticker)
         return pos.contracts if pos else D(0)
 
@@ -126,12 +131,18 @@ def check_order(
         return "open order limit reached"
     if now - book.ts > limits.max_book_age_seconds:
         return f"book is {now - book.ts:.1f}s old"
-    if req.side is Side.BUY and book.best_ask is not None:
-        if req.price > book.best_ask + limits.price_collar:
-            return f"buy at {req.price} is beyond the collar from ask {book.best_ask}"
-    if req.side is Side.SELL and book.best_bid is not None:
-        if req.price < book.best_bid - limits.price_collar:
-            return f"sell at {req.price} is beyond the collar from bid {book.best_bid}"
+    if (
+        req.side is Side.BUY
+        and book.best_ask is not None
+        and req.price > book.best_ask + limits.price_collar
+    ):
+        return f"buy at {req.price} is beyond the collar from ask {book.best_ask}"
+    if (
+        req.side is Side.SELL
+        and book.best_bid is not None
+        and req.price < book.best_bid - limits.price_collar
+    ):
+        return f"sell at {req.price} is beyond the collar from bid {book.best_bid}"
 
     resting = open_orders.get(req.ticker, [])
     same = sum((c for s, c, _ in resting if s is req.side), D(0))

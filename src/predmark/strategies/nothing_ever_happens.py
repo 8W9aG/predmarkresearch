@@ -42,6 +42,8 @@ TOP = 1000
 
 @dataclass
 class PassSummary:
+    """Counts of what one pass did with each market, and why it stopped early, if it did."""
+
     listed: int = 0
     entered: int = 0
     partial: int = 0  # IOC filled in part: displayed size below one contract
@@ -66,6 +68,7 @@ def _listed_without_bid(market: dict[str, Any]) -> bool:
 
 
 def volume_24h(market: dict[str, Any]) -> float:
+    """Return a listing's 24-hour volume, or 0 when it is missing."""
     return float(market.get("volume_24h_fp") or 0)
 
 
@@ -190,6 +193,7 @@ def run(
 def backtest(
     panel: str | Path, window_hours: int = 24, lot: int = 1, min_volume: float = MIN_VOLUME_24H
 ) -> dict[str, Any]:
+    """Run the backtest in `predmark.backtest.nothing_ever_happens` on a panel's `raw.jsonl`."""
     from ..backtest import nothing_ever_happens as bt
 
     return bt.run(panel, window_hours, lot, min_volume)

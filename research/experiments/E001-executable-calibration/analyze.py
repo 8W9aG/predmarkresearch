@@ -34,10 +34,15 @@ N_BOOT = 2000
 
 
 def to_ts(value: str) -> int:
+    """Return the Unix time in seconds for an ISO 8601 timestamp."""
     return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
 
 
 def quote(row: dict) -> tuple[float, float] | None:
+    """Return the latest (yes_bid, yes_ask) at most MAX_STALE before the 12-hour horizon.
+
+    Return None if no candle falls in that window or its prices are missing.
+    """
     target = to_ts(row["close_time"]) - HORIZON
     usable = [c for c in row["candles"] if target - MAX_STALE <= c["end_period_ts"] <= target]
     if not usable:
@@ -58,6 +63,7 @@ def close_price(distribution: dict) -> float:
 
 
 def build(rows: list[dict]) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Apply the preregistered filters and return the panel with row counts after each step."""
     flow: dict[str, int] = {"candidates": len(rows)}
     flow["request_errors"] = sum(1 for r in rows if r.get("error"))
     records = []
@@ -93,12 +99,17 @@ def build(rows: list[dict]) -> tuple[pd.DataFrame, dict[str, int]]:
 
 
 def taker_fee(price: float, multiplier: object) -> float:
+    """Return the Kalshi taker fee per contract, in dollars, on a 100-contract order."""
     m = Decimal(str(multiplier if multiplier is not None else 1))
     fee = kalshi_fee(Decimal(100), Decimal(str(round(price, 4))), True, multiplier=m)
     return float(fee) / 100
 
 
 def rule_pnl(df: pd.DataFrame) -> pd.DataFrame:
+    """Add net P&L per contract, after taker fees, for the fade and back rules.
+
+    Fading buys No at 1 - yes_bid. Backing buys Yes at yes_ask.
+    """
     df = df.copy()
     df["pnl_fade"] = [
         (1 - y) - (1 - b) - taker_fee(1 - b, m)
@@ -112,6 +123,10 @@ def rule_pnl(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def describe_rule(df: pd.DataFrame, column: str, mask: np.ndarray) -> dict:
+    """Summarize a rule's P&L on the masked rows, with 97.5% intervals by event and date.
+
+    The mean is None when the rows span fewer than two events.
+    """
     sub = df[mask]
     if len(sub) == 0 or sub["event"].nunique() < 2:
         return {"n": int(len(sub)), "events": int(sub["event"].nunique()), "mean": None}
@@ -130,6 +145,7 @@ def describe_rule(df: pd.DataFrame, column: str, mask: np.ndarray) -> dict:
 
 
 def evaluate(df: pd.DataFrame) -> dict:
+    """Return calibration, recalibration, rule, and per-category results for one split."""
     p, y = df["mid"].to_numpy(), df["y"].to_numpy()
     a, b = recalibration(p, y)
 
@@ -172,6 +188,7 @@ def evaluate(df: pd.DataFrame) -> dict:
 
 
 def decide(rule: dict) -> dict:
+    """Return whether a rule is supported: its event-clustered lower bound is above zero."""
     if rule.get("mean") is None:
         return {"supported": False, "note": "too few observations"}
     event_ok = rule["ci975_event"][0] > 0
@@ -180,6 +197,11 @@ def decide(rule: dict) -> dict:
 
 
 def main() -> None:
+    """Claim the holdout, evaluate the dev and holdout splits, and write results.json.
+
+    Events are split 70/30 by their last close time. Both evaluations go to the trial
+    ledger, and the ledger refuses a second holdout claim.
+    """
     ledger.claim_holdout(EXPERIMENT)
     raw_bytes = RAW.read_bytes()
     digest = hashlib.sha256(raw_bytes).hexdigest()

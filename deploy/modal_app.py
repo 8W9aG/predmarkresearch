@@ -55,6 +55,10 @@ jev_secret = modal.Secret.from_name("typesafe-jev")
     max_containers=1,
 )
 def daily() -> dict:
+    """Run every strategy's paper pass, then every collector, on the daily schedule.
+
+    The volume is committed even if a pass fails, so partial journals are kept.
+    """
     from predmark.collect.runner import run_all as collect_all
     from predmark.strategies.runner import run_all
 
@@ -70,6 +74,7 @@ def daily() -> dict:
 
 @app.function(**common, timeout=2 * 3600, retries=0, max_containers=1)
 def run(name: str) -> dict:
+    """Run one paper pass of the named strategy now and commit the volume."""
     from predmark.strategies.runner import run_one
 
     try:
@@ -82,6 +87,7 @@ def run(name: str) -> dict:
 
 @app.function(**common, timeout=600)
 def status(name: str = "") -> dict:
+    """Return the paper account of the named strategy, or of every strategy."""
     from predmark.strategies import names
     from predmark.strategies.runner import status as account
 
@@ -92,6 +98,7 @@ def status(name: str = "") -> dict:
 
 @app.function(**common, secrets=[jev_secret], timeout=3600, retries=0, max_containers=1)
 def collect(name: str) -> dict:
+    """Run the named collector once now and commit the volume."""
     from predmark.collect.runner import run_one
 
     try:

@@ -49,10 +49,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### Lint
 
-- [ ] Widen ruff's rule set to `["E", "F", "I", "B", "UP", "SIM", "D", "ERA"]`. Today ours is `E F I B UP`.
-  - `SIM` simplifies code, `D` checks docstrings (Google convention) and `ERA` rejects commented-out code.
-  - Ignore `D105` and `D107`, because the class docstring covers magic methods and `__init__`.
-  - Exempt `tests/**` from `D1`, because a test's name says what it checks.
 - [ ] Measure docstring coverage with `interrogate` on `src/predmark`, with `fail-under` set at today's level. Raise the threshold as coverage rises, and never lower it. Skip magic, `__init__`, private and semi-private names.
 - [ ] Add a size limit: 500 lines per file and 40 lines per function. Count the signature as one line, and leave decorators, parameter lists and the docstring out of the count.
   - A function that reads better whole gets `# long-function: <reason>` on its `def` line.

@@ -1,6 +1,7 @@
-"""Jev forecasts: ask Jev whether each popular Kalshi market resolves YES, and record the answer
-with the quote at that time and the bet it implies. Data for E003. Never trades: the decision is
-recorded, not sent anywhere.
+"""Jev forecasts of popular Kalshi markets, for E003.
+
+Ask Jev whether each popular Kalshi market resolves YES, and record the answer with the quote at
+that time and the bet it implies. Never trades: the decision is recorded, not sent anywhere.
 
 Forward only. We do not know Jev's training cutoff, so forecasts of markets that have already
 resolved could score memorised outcomes. Every forecast here is made before its market resolves.
@@ -59,6 +60,8 @@ QUOTE_FIELDS = (
 
 @dataclass
 class Summary:
+    """Counts from one collection run, the spend in USD, and why it stopped early, if it did."""
+
     universe: int = 0
     forecast: int = 0
     skipped: int = 0  # forecast on an earlier run
@@ -120,8 +123,10 @@ def collect(
     max_new: int | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Summary:
-    """Forecast every market in `markets` not already in `dataset`. Failures are recorded, not
-    retried, so each market has exactly one record."""
+    """Forecast every market in `markets` not already in `dataset`.
+
+    Failures are recorded, not retried, so each market has exactly one record.
+    """
     summary = Summary(universe=len(markets))
     done = dataset.keys("ticker")
     with dataset.appender() as out:
@@ -180,6 +185,11 @@ def run(
     data: Any = None,
     client: jev.JevClient | None = None,
 ) -> dict[str, Any]:
+    """Fetch the live Kalshi listing and forecast its popular markets not yet in `forecasts.jsonl`.
+
+    Calls the Kalshi API and the paid Jev API. Writes `forecasts.jsonl` and `cost.jsonl` in
+    `out_dir`. `max_new` caps the markets tried this run.
+    """
     from ..data.kalshi import KalshiData
 
     data = data or KalshiData(per_second=10)

@@ -1,5 +1,8 @@
-"""E003 analysis on synthetic data: a planted edge is found, a null is not, nothing after the
-cutoff is used, and the holdout is guarded."""
+"""E003 analysis on synthetic data.
+
+A planted edge is found, a null is not, nothing after the cutoff is used, and the holdout is
+guarded.
+"""
 
 import importlib.util
 import json
@@ -36,8 +39,11 @@ def forecast(i, p, bid, ask, ts="2026-11-25T14:00:00", event=None):
 
 
 def synthetic(informative: bool, n=1600, seed=0):
-    """True probability q. Planted: the market misprices q by 25 cents and Jev knows q. Null: the
-    market prices q correctly and Jev is uniform noise, so every bet pays spread and fee."""
+    """Build E003 rows and outcomes around a true probability q.
+
+    Planted: the market misprices q by 25 cents and Jev knows q. Null: the market prices q
+    correctly and Jev is uniform noise, so every bet pays spread and fee.
+    """
     rng = np.random.default_rng(seed)
     rows, outcomes = [], {}
     for i in range(n):

@@ -25,6 +25,7 @@ SIZE_BINS = [(1, 1), (2, 2), (3, 5), (6, 10), (11, 10**9)]
 
 
 def to_ts(value: str) -> int:
+    """Return the Unix time in seconds for an ISO 8601 timestamp."""
     return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
 
 
@@ -51,11 +52,16 @@ def entry(row: dict) -> tuple[float, float | None] | None:
 
 
 def taker_fee(price: float, multiplier: object) -> float:
+    """Return the Kalshi taker fee per contract, in dollars, on a 100-contract order."""
     m = Decimal(str(multiplier if multiplier is not None else 1))
     return float(kalshi_fee(Decimal(100), Decimal(str(round(price, 4))), True, multiplier=m)) / 100
 
 
 def build(rows: list[dict]) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Return one row per tradable market, with buy-No and buy-Yes net P&L, and row counts.
+
+    No is bought at 1 - yes_bid at the entry candle. Yes is bought at yes_ask as a control.
+    """
     flow = {
         "candidates": len(rows),
         "request_errors": sum(1 for r in rows if r.get("error")),
@@ -94,12 +100,14 @@ def build(rows: list[dict]) -> tuple[pd.DataFrame, dict[str, int]]:
 
 
 def mean_ci(df: pd.DataFrame, column: str, cluster: str) -> tuple[float, float]:
+    """Return a 95% cluster-bootstrap interval for the mean of a column."""
     values = df[column].to_numpy()
     draws = cluster_bootstrap(lambda i, v=values: v[i].mean(), df[cluster].to_numpy(), N_BOOT)
     return interval(draws, 0.95)
 
 
 def group(df: pd.DataFrame) -> dict:
+    """Return summary statistics for a set of buy-No trades."""
     return {
         "n": int(len(df)),
         "events": int(df["event"].nunique()),
@@ -111,6 +119,7 @@ def group(df: pd.DataFrame) -> dict:
 
 
 def evaluate(df: pd.DataFrame, clusters: tuple[str, ...]) -> dict:
+    """Return the full summary for one split, with intervals clustered by each of `clusters`."""
     yes = df[df["yes_net"].notna()]
     result = {
         **group(df),
@@ -145,12 +154,21 @@ def evaluate(df: pd.DataFrame, clusters: tuple[str, ...]) -> dict:
 
 
 def decide(result: dict) -> dict:
+    """Return whether H1 is supported: the event-clustered lower bound is above zero.
+
+    The result must have intervals clustered by both event and series.
+    """
     event = result["net_ci95"]["event"][0] > 0
     series = result["net_ci95"]["series"][0] > 0
     return {"supported": bool(event), "robust_to_series_clustering": bool(event and series)}
 
 
 def main() -> None:
+    """Claim the holdout, evaluate the dev and holdout splits, and write results.json.
+
+    Both evaluations go to the trial ledger, and the ledger refuses a second holdout claim.
+    The strict-window holdout is descriptive only and does not decide H1.
+    """
     ledger.claim_holdout(EXPERIMENT)
     raw_bytes = RAW.read_bytes()
     digest = hashlib.sha256(raw_bytes).hexdigest()

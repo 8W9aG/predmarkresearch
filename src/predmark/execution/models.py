@@ -9,17 +9,23 @@ from enum import StrEnum
 
 
 class Side(StrEnum):
+    """Side of an order on the YES leg. The values are Kalshi's book sides."""
+
     BUY = "bid"  # buy YES, economically equal to selling NO
     SELL = "ask"  # sell YES, economically equal to buying NO at 1 - price
 
 
 class TimeInForce(StrEnum):
+    """How long an order stays working at the venue."""
+
     GTC = "good_till_canceled"
     IOC = "immediate_or_cancel"
     FOK = "fill_or_kill"
 
 
 class OrderStatus(StrEnum):
+    """Lifecycle state of an order."""
+
     PENDING_NEW = "pending_new"  # journaled, not yet acknowledged
     RESTING = "resting"
     FILLED = "filled"
@@ -33,6 +39,12 @@ TERMINAL = {OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED}
 
 @dataclass(frozen=True)
 class OrderRequest:
+    """An order that a strategy asks the engine to send.
+
+    `count` is in contracts and `price` is in dollars per YES contract. `client_order_id`
+    lets `reconcile()` find an order whose send outcome is unknown.
+    """
+
     ticker: str
     side: Side
     count: Decimal
@@ -45,6 +57,8 @@ class OrderRequest:
 
 @dataclass(frozen=True)
 class PlaceResult:
+    """The venue's response to a placed order, in filled and remaining contracts."""
+
     order_id: str
     status: OrderStatus
     filled: Decimal = Decimal(0)
@@ -53,6 +67,8 @@ class PlaceResult:
 
 @dataclass(frozen=True)
 class VenueOrder:
+    """An order as the venue reports it."""
+
     order_id: str
     client_order_id: str | None
     ticker: str
@@ -64,6 +80,11 @@ class VenueOrder:
 
 @dataclass(frozen=True)
 class Fill:
+    """One execution reported by the venue.
+
+    `fee` is in dollars and `ts` is in Unix seconds.
+    """
+
     fill_id: str
     order_id: str
     ticker: str
@@ -86,10 +107,12 @@ class Book:
 
     @property
     def best_bid(self) -> Decimal | None:
+        """Highest bid price, or None if there are no bids."""
         return self.bids[0][0] if self.bids else None
 
     @property
     def best_ask(self) -> Decimal | None:
+        """Lowest ask price, or None if there are no asks."""
         return self.asks[0][0] if self.asks else None
 
 

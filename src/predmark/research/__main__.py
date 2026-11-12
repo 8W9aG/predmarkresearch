@@ -11,6 +11,10 @@ from .papers import check_paper
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the research command line and return the exit code.
+
+    The exit code is 1 if a check finds any problem.
+    """
     parser = argparse.ArgumentParser(prog="python -m predmark.research")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("trials", help="every evaluation ever run")
@@ -24,10 +28,7 @@ def main(argv: list[str] | None = None) -> int:
         for t in read_trials():
             print(json.dumps(t, sort_keys=True))
         return 0
-    if args.cmd == "check-integrity":
-        problems = check_integrity()
-    else:
-        problems = check_paper(args.path)
+    problems = check_integrity() if args.cmd == "check-integrity" else check_paper(args.path)
     for problem in problems:
         print(f"PROBLEM: {problem}")
     print("ok" if not problems else f"{len(problems)} problem(s)")

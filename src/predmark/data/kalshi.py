@@ -13,6 +13,8 @@ BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
 
 class KalshiData:
+    """Read-only client for the public Kalshi trade API, live and historical tables."""
+
     def __init__(self, per_second: float = 10.0, client: ReadClient | None = None):
         self.client = client or ReadClient(BASE_URL, per_second=per_second)
 
@@ -27,9 +29,11 @@ class KalshiData:
                 return
 
     def series(self) -> list[dict[str, Any]]:
+        """Return every Kalshi series, following all pages."""
         return list(self._pages("/series", "series", {"limit": 2000}))
 
     def historical_cutoff(self) -> dict[str, Any]:
+        """Return the cutoff that splits the live tables from the historical archive."""
         return self.client.get_json("/historical/cutoff")
 
     def settled_markets(self, series_ticker: str) -> Iterator[dict[str, Any]]:
@@ -87,6 +91,10 @@ class KalshiData:
         period_minutes: int = 60,
         historical: bool = False,
     ) -> list[dict[str, Any]]:
+        """Return a market's price candles between two Unix timestamps in seconds.
+
+        Set `historical` for markets that have moved to the archive.
+        """
         path = (
             f"/historical/markets/{ticker}/candlesticks"
             if historical
@@ -96,7 +104,9 @@ class KalshiData:
         return self.client.get_json(path, params).get("candlesticks") or []
 
     def market(self, ticker: str) -> dict[str, Any]:
+        """Return one market from the live table, or an empty dict if the response has none."""
         return self.client.get_json(f"/markets/{ticker}").get("market") or {}
 
     def orderbook(self, ticker: str, depth: int = 25) -> dict[str, Any]:
+        """Return the current order book for a market, up to `depth` levels."""
         return self.client.get_json(f"/markets/{ticker}/orderbook", {"depth": depth})

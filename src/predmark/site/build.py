@@ -88,6 +88,7 @@ def fetch_from_url(dest: str | Path, url: str, timeout: float = 60) -> list[str]
 
 
 def load_runs(state_dir: str | Path, name: str) -> list[dict[str, Any]]:
+    """Return the run log entries of strategy `name` sorted by time, or an empty list."""
     path = Path(state_dir) / f"{name}.runs.jsonl"
     if not path.exists():
         return []
@@ -96,7 +97,7 @@ def load_runs(state_dir: str | Path, name: str) -> list[dict[str, Any]]:
 
 
 def repo_url(root: Path) -> str | None:
-    """https URL of the origin remote, for linking to reports, or None."""
+    """Return the https URL of the origin remote, for linking to reports, or None."""
     try:
         url = subprocess.run(
             ["git", "-C", str(root), "remote", "get-url", "origin"],
@@ -127,27 +128,36 @@ def evidence_summary(root: Path, directory: str) -> dict[str, str]:
 
 
 def money(value: float, signed: bool = False) -> str:
+    """Format a dollar amount with a true minus sign, and a plus sign if `signed`."""
     sign = "−" if value < 0 else ("+" if signed and value > 0 else "")
     return f"{sign}${abs(value):,.2f}"
 
 
 def count(value: float) -> str:
+    """Format a number as a whole count with thousands separators."""
     return f"{int(value):,}"
 
 
 def day(ts: float) -> str:
+    """Format a Unix timestamp as a UTC date, such as `Nov 8, 2026`."""
     return datetime.fromtimestamp(ts, UTC).strftime("%b %-d, %Y")
 
 
 def stamp(ts: float) -> str:
+    """Format a Unix timestamp as a UTC date and time, such as `2026-11-08 14:30 UTC`."""
     return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def e(text: object) -> str:
+    """Escape any value for HTML text or an attribute value."""
     return html.escape(str(text), quote=True)
 
 
 def series(runs: list[dict[str, Any]]) -> dict[str, list[float]]:
+    """Extract the per-run account series that the charts and tiles show.
+
+    Marked P&L falls back to realized P&L when a run has no mark.
+    """
     acct = [r["account"] for r in runs]
     return {
         "ts": [r["ts"] for r in runs],
@@ -167,6 +177,7 @@ PAD = {"left": 64, "right": 96, "top": 16, "bottom": 32}
 
 
 def nice_ticks(lo: float, hi: float, n: int = 4) -> list[float]:
+    """Return about `n` evenly spaced round tick values that cover `lo` to `hi`."""
     if lo == hi:
         lo, hi = lo - 1, hi + 1
     raw = (hi - lo) / n
@@ -277,6 +288,10 @@ def line_chart(
 
 
 def page(title: str, body: str, depth: int = 0) -> str:
+    """Wrap `body` in a full HTML page.
+
+    `depth` is how many directories below the site root the page is, for asset links.
+    """
     up = "../" * depth
     return f"""<!doctype html>
 <html lang="en">
@@ -303,6 +318,7 @@ NOTICE = (
 
 
 def tiles(s: dict[str, list[float]]) -> str:
+    """Render the latest value of each account series as summary tiles."""
     items = [
         ("P&L, marked to market", money(s["marked"][-1], signed=True)),
         ("Realized P&L", money(s["realized"][-1], signed=True)),
@@ -320,6 +336,7 @@ def tiles(s: dict[str, list[float]]) -> str:
 
 
 def runs_table(runs: list[dict[str, Any]]) -> str:
+    """Render an HTML table of every run, newest first."""
     head = (
         "<tr><th>Run</th><th>Entered</th><th>Settled</th><th>Open</th>"
         "<th>Marked P&amp;L</th><th>Realized P&amp;L</th><th>Capital at risk</th>"
@@ -340,6 +357,10 @@ def runs_table(runs: list[dict[str, Any]]) -> str:
 
 
 def evidence_html(root: Path, strategy: Any, base_url: str | None) -> str:
+    """Render a summary of each experiment report listed as evidence for `strategy`.
+
+    Links point to the `main` branch at `base_url` when it is known.
+    """
     if not strategy.evidence:
         return "<p>No experiment has tested this strategy yet.</p>"
     items = []
@@ -358,6 +379,7 @@ def evidence_html(root: Path, strategy: Any, base_url: str | None) -> str:
 
 
 def strategy_page(root: Path, strategy: Any, runs: list[dict[str, Any]], base: str | None) -> str:
+    """Render the page for one strategy, with its charts, runs, and research."""
     body = [
         '<p><a href="../index.html">← All strategies</a></p>',
         f"<h1>{e(strategy.name)}</h1>",
@@ -404,6 +426,7 @@ def strategy_page(root: Path, strategy: Any, runs: list[dict[str, Any]], base: s
 
 
 def index_page(cards: list[str], built: float) -> str:
+    """Render the home page from the strategy cards."""
     body = [
         "<h1>predmark strategies</h1>",
         '<p class="lede">Strategies this system runs on Kalshi, and how each has done over '
@@ -418,6 +441,7 @@ def index_page(cards: list[str], built: float) -> str:
 
 
 def card(strategy: Any, runs: list[dict[str, Any]]) -> str:
+    """Render the home page card for one strategy."""
     href = f"strategies/{e(strategy.name)}.html"
     if runs:
         s = series(runs)

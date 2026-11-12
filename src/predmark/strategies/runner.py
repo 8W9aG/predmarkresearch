@@ -20,6 +20,7 @@ from .base import VENUES, open_offline, report
 
 
 def journal_path(state_dir: str | Path, name: str, venue: str = "paper") -> Path:
+    """Return the journal path for a strategy on a venue. Raise ValueError for an unknown venue."""
     if venue not in VENUES:
         raise ValueError(f"unknown venue {venue!r}, expected one of {VENUES}")
     suffix = "" if venue == "paper" else f".{venue}"
@@ -33,6 +34,7 @@ def run_one(
     venue: str = "paper",
     **options: Any,
 ) -> dict[str, Any]:
+    """Run one pass of a strategy on `venue` with its journal and the shared kill file."""
     state = Path(state_dir)
     state.mkdir(parents=True, exist_ok=True)
     journal = journal_path(state, name, venue)
@@ -45,6 +47,10 @@ def run_all(
     only: list[str] | None = None,
     venue: str = "paper",
 ) -> dict[str, Any]:
+    """Run each strategy in `only`, or all of them, and return each one's result by name.
+
+    A failing strategy is logged and recorded as not ok. The others still run.
+    """
     out: dict[str, Any] = {}
     for name in only or names():
         log(f"== {name}")

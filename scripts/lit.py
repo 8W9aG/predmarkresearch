@@ -32,6 +32,8 @@ ATOM = "{http://www.w3.org/2005/Atom}"
 
 @dataclass
 class Record:
+    """A literature record as one source reports it."""
+
     title: str
     authors: list[str]
     date: str | None
@@ -53,6 +55,10 @@ def _clean(text: str | None) -> str | None:
 
 
 def parse_arxiv(xml_text: str) -> list[Record]:
+    """Parse an arXiv Atom API response into records.
+
+    Raise ValueError if the response is not XML.
+    """
     if not xml_text.lstrip().startswith("<"):
         raise ValueError(f"arXiv returned a non-XML response: {xml_text[:80]!r}")
     root = ElementTree.fromstring(xml_text)
@@ -78,6 +84,10 @@ def parse_arxiv(xml_text: str) -> list[Record]:
 
 
 def fetch_arxiv(query: str, limit: int, client: ReadClient | None = None) -> list[Record]:
+    """Fetch the newest arXiv papers that match `query`.
+
+    The default client sends at most 0.3 requests per second.
+    """
     client = client or ReadClient(
         "https://export.arxiv.org", per_second=0.3, max_retries=2, backoff=5
     )
@@ -101,6 +111,7 @@ def _openalex_abstract(index: dict[str, list[int]] | None) -> str | None:
 
 
 def parse_openalex(payload: dict[str, Any]) -> list[Record]:
+    """Parse an OpenAlex `/works` response into records."""
     out = []
     for w in payload.get("results") or []:
         ids = w.get("ids") or {}
@@ -126,6 +137,10 @@ def parse_openalex(payload: dict[str, Any]) -> list[Record]:
 
 
 def fetch_openalex(query: str, limit: int, since: str, client: ReadClient | None = None):
+    """Fetch the most cited OpenAlex works for `query`, published on or after `since`.
+
+    `since` is an ISO date. The request sends `OPENALEX_API_KEY` when it is set.
+    """
     client = client or ReadClient("https://api.openalex.org", per_second=2)
     params: dict[str, Any] = {
         "search": query,
@@ -139,6 +154,11 @@ def fetch_openalex(query: str, limit: int, since: str, client: ReadClient | None
 
 
 def fetch_semantic_scholar(query: str, limit: int, since_year: int) -> list[Record]:
+    """Search Semantic Scholar for papers that match `query`, from `since_year` on.
+
+    The request sends `SEMANTIC_SCHOLAR_API_KEY` when it is set. Without a key, a 429 response
+    raises RuntimeError with instructions to set one.
+    """
     key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
     # Without a key, requests share one public pool that answered about 1 in 12 on 2026-11-11.
     client = ReadClient(
@@ -192,6 +212,10 @@ def _local(el: Element) -> str:
 
 
 def parse_feed(xml_text: str, name: str) -> list[Record]:
+    """Parse the items of an RSS or Atom feed into blog records.
+
+    `name` is the venue, and the author when an item names none.
+    """
     root = ElementTree.fromstring(xml_text)
     out = []
     for item in root.iter():
@@ -221,6 +245,7 @@ def parse_feed(xml_text: str, name: str) -> list[Record]:
 
 
 def fetch_feed(url: str, name: str) -> list[Record]:
+    """Fetch the RSS or Atom feed at `url` and parse it into blog records."""
     resp = httpx.get(
         url, timeout=30, follow_redirects=True, headers={"User-Agent": "predmarkresearch/0.1"}
     )
@@ -240,10 +265,15 @@ REVIEW_FIELDS = ("status", "relevance", "tags", "note")
 
 
 def norm_title(title: str) -> str:
+    """Normalize a title for matching: lowercase letters and digits, single spaces."""
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
 
 def citation_key(rec: dict[str, Any]) -> str:
+    """Build a citation key from the first author's surname, the year, and a title hash.
+
+    An example is `smith2024-1a2b`. The year is `nd` when the record has no date.
+    """
     author = (rec.get("authors") or ["anon"])[0] or "anon"
     surname = re.sub(r"[^a-z]", "", author.split()[-1].lower()) if author.split() else "anon"
     year = (rec.get("date") or "")[:4]
@@ -255,6 +285,8 @@ def citation_key(rec: dict[str, Any]) -> str:
 
 
 class Library:
+    """The literature library, read from and written to a JSONL file."""
+
     def __init__(self, path: str | Path = DEFAULT_PATH):
         self.path = Path(path)
         self.records: dict[str, dict[str, Any]] = {}
@@ -298,6 +330,11 @@ class Library:
         return True
 
     def review(self, key: str, **fields: Any) -> dict[str, Any]:
+        """Set review fields on the record `key`, and return the record.
+
+        Raise ValueError for a field outside REVIEW_FIELDS or an unknown status. Changes stay in
+        memory until `save`.
+        """
         rec = self.records[key]
         for name, value in fields.items():
             if name not in REVIEW_FIELDS:
@@ -308,6 +345,7 @@ class Library:
         return rec
 
     def save(self) -> None:
+        """Write every record to the JSONL file, sorted by key."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lines = [json.dumps(self.records[k], sort_keys=True) for k in sorted(self.records)]
         self.path.write_text("\n".join(lines) + ("\n" if lines else ""))
@@ -325,6 +363,7 @@ class Library:
         )
 
     def next_new(self) -> dict[str, Any] | None:
+        """Return the first unreviewed record in review order, or None."""
         return next((r for r in self.ordered() if r["status"] == "new"), None)
 
     def write_index(self, path: str | Path = INDEX_PATH) -> None:
@@ -382,6 +421,11 @@ def harvest(
     library: Library | None = None,
     log: Callable[[str], None] = print,
 ) -> dict[str, Any]:
+    """Fetch every source in the config, merge the records, and rewrite the index.
+
+    A failing source is logged and listed under `failed` in the returned summary. The library
+    is saved after each source.
+    """
     cfg = yaml.safe_load(Path(config_path).read_text())
     library = library or Library()
     since = (date.today() - timedelta(days=int(cfg.get("lookback_days", 1095)))).isoformat()
@@ -415,6 +459,7 @@ def harvest(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the literature command line and return the exit code."""
     parser = argparse.ArgumentParser(prog="python scripts/lit.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
     h = sub.add_parser("harvest", help="fetch sources and rewrite INDEX.md")

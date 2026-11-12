@@ -64,6 +64,10 @@ def entry(
 
 
 def fee_per_contract(price: float, multiplier: object, lot: int) -> float:
+    """Return the Kalshi taker fee per contract on a lot at `price`, for a direct account.
+
+    A missing `multiplier` counts as 1. The fee is rounded up on the whole lot, then divided.
+    """
     m = Decimal(str(multiplier if multiplier is not None else 1))
     fee = kalshi_fee(
         Decimal(lot),
@@ -78,6 +82,10 @@ def fee_per_contract(price: float, multiplier: object, lot: int) -> float:
 def trades(
     rows: list[dict], window_hours: int = 24, lot: int = 1, min_volume: float = 0
 ) -> pd.DataFrame:
+    """Return one row per market with an entry: NO price, fee, and gross and net PnL per contract.
+
+    `yes_net` is the control of buying YES at the ask. It is NaN when there is no ask below 1.
+    """
     records = []
     for r in rows:
         found = entry(r, window_hours, min_volume)
@@ -133,6 +141,11 @@ def evaluate(
     n_boot: int = 2000,
     min_volume: float = 0,
 ) -> dict[str, Any]:
+    """Return the summary of all trades, with intervals that resample whole events.
+
+    Also breaks results down by category, NO price decile and series, plus a buy-YES control.
+    Groups smaller than 50 markets by category, or 100 by series, are left out.
+    """
     df = trades(rows, window_hours, lot, min_volume)
     out: dict[str, Any] = {
         "settings": {
@@ -179,5 +192,6 @@ def evaluate(
 def run(
     panel: str | Path, window_hours: int = 24, lot: int = 1, min_volume: float = 0
 ) -> dict[str, Any]:
+    """Read a panel's `raw.jsonl` and return its evaluation, with the panel path."""
     rows = [json.loads(line) for line in Path(panel).read_text().splitlines() if line.strip()]
     return {"panel": str(panel), **evaluate(rows, window_hours, lot, min_volume=min_volume)}

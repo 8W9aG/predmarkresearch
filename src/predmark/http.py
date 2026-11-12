@@ -13,12 +13,15 @@ RETRYABLE = {429, 500, 502, 503, 504}
 
 
 class RateLimiter:
+    """Spacer that keeps calls at most `per_second` apart, shared safely across threads."""
+
     def __init__(self, per_second: float):
         self.interval = 1.0 / per_second
         self._next = 0.0
         self._lock = threading.Lock()
 
     def wait(self) -> None:
+        """Block until the next call slot is free, then reserve it."""
         with self._lock:
             now = time.monotonic()
             delay = self._next - now
@@ -28,6 +31,8 @@ class RateLimiter:
 
 
 class ReadClient:
+    """HTTP client for GET requests with rate limiting and retries with backoff."""
+
     def __init__(
         self,
         base_url: str,
@@ -50,6 +55,11 @@ class ReadClient:
         )
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
+        """Send a GET request and return the response.
+
+        Retries on 429, 5xx and transport errors with jittered exponential backoff. Other
+        error statuses raise at once. After the last retry, the last error is raised.
+        """
         last: Exception | None = None
         for attempt in range(self.max_retries + 1):
             self.limiter.wait()
@@ -69,4 +79,5 @@ class ReadClient:
         raise last
 
     def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        """Send a GET request with retries and return the decoded JSON body."""
         return self.get(path, params).json()

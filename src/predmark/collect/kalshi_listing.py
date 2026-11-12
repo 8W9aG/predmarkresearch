@@ -1,6 +1,8 @@
-"""Kalshi listing snapshots: the quote, sizes and 24-hour volume of every popular open market, once
-a day. Kalshi does not serve historical order books or listings, so a backtest that replays what the
-live paper run saw needs this record.
+"""Daily Kalshi listing snapshots.
+
+Each snapshot holds the quote, sizes and 24-hour volume of every popular open market. Kalshi does
+not serve historical order books or listings, so a backtest that replays what the live paper run
+saw needs this record.
 
 A snapshot keeps every market with 24-hour volume of at least MIN_VOLUME_24H, busiest first, in the
 order Nothing Ever Happens uses. It does not apply the TOP cap. Each record has its `rank`, so a
@@ -55,6 +57,7 @@ def snapshot(
 
 
 def snapshot_path(out_dir: Path, listed_at: datetime) -> Path:
+    """Return the snapshot file for the UTC date of `listed_at`."""
     return out_dir / "snapshots" / f"{listed_at.astimezone(UTC):%Y-%m-%d}.jsonl.gz"
 
 
@@ -73,6 +76,10 @@ def run(
     data: Any = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> dict[str, Any]:
+    """Fetch the live Kalshi listing and append today's snapshot of its popular markets.
+
+    Calls the Kalshi API and appends to a gzip file under `out_dir/snapshots/`.
+    """
     from ..data.kalshi import KalshiData
 
     data = data or KalshiData(per_second=10)

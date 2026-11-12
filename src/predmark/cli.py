@@ -90,6 +90,7 @@ def _status(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the predmark command line and return the exit code."""
     names = strategies.names()
     parser = argparse.ArgumentParser(prog="predmark")
     sub = parser.add_subparsers(dest="cmd", required=True)

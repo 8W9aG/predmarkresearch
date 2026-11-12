@@ -11,6 +11,8 @@ from typing import Any
 
 @dataclass(frozen=True)
 class Collector:
+    """Registry entry for one collector: its name, description and run function."""
+
     name: str
     description: str
     # run(out_dir, log, **options) -> JSON-able summary. Writes only under out_dir.
@@ -20,8 +22,11 @@ class Collector:
 
 
 class Dataset:
-    """An append-only JSONL file of records. Each record is written and flushed on its own, so an
-    interrupted run keeps everything it recorded."""
+    """An append-only JSONL file of records.
+
+    Each record is written and flushed on its own, so an interrupted run keeps everything it
+    recorded.
+    """
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -35,9 +40,11 @@ class Dataset:
                     yield json.loads(line)
 
     def keys(self, field: str) -> set[Any]:
+        """Return the set of values of `field` across records that have it."""
         return {r[field] for r in self if field in r}
 
     def appender(self) -> _Appender:
+        """Open the file for appending, creating its directory, and return a context manager."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         return _Appender(self.path.open("a"))
 
