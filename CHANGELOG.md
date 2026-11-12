@@ -16,6 +16,8 @@ All notable changes to this project are recorded here, in [Keep a Changelog](htt
 - `demo_check` picks only markets on exchange index 0, where its subaccount has funds.
 - Shard funding. Kalshi funds each exchange index separately and refuses orders on an unfunded one. `KalshiVenue.shard_balances()` reads cash per index, and Nothing Ever Happens skips markets on an unfunded index (`pass.unfunded`) instead of stopping its pass at the first refusal. `python -m predmark.execution.demo_accounts` lists balances, creates subaccounts and moves cash between subaccounts and indexes on demo. Demo subaccount 2 got $10 on index 2 on 2026-11-11, and a 30-entry demo pass then filled on both indexes.
 
+- pytest config: `addopts = "-ra"` lists every test that did not pass with its reason, and `pytest-timeout` fails any test that runs longer than 60 seconds (`timeout_method = "thread"`). `pytest-mock` is in the dev group.
+
 ### Changed
 
 - Ruff selects `SIM`, `D` and `ERA` as well as `E F I B UP`. `D` uses the Google convention, ignores `D105` and `D107`, and exempts `tests/**` from `D1`. Every public module, class and function in `src/`, `scripts/`, `deploy/` and the experiment scripts now has a docstring.
