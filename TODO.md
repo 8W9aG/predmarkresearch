@@ -70,7 +70,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### Tests
 
-- [ ] Configure pytest the way they do: `addopts = "-ra"`, a 60-second per-test timeout (`pytest-timeout`, `timeout_method = "thread"`), and `pytest-mock` in the dev group.
 - [ ] Add `tests/test_single_source.py`, which pins every copy that can't import its source to that source. Candidates here:
   - `MIN_VOLUME_24H` and `TOP` quoted in `README.md`.
   - the 14:00 UTC schedule in `deploy/modal_app.py`, the README and the 15:30 UTC site workflow.
