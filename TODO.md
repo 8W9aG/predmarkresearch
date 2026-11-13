@@ -78,9 +78,6 @@ Found while building the paper runner, E002 and the website (2026-11-08).
 
 ### CI and repository automation
 
-- [ ] Add a CI workflow for "Lint and tests" that runs on pull requests and on pushes to `main`. Today only the site workflow exists, so nothing runs lint or tests in CI.
-  - Use `permissions: contents: read`, and a concurrency group that cancels superseded runs.
-  - Use `setup-uv` with caching keyed on `uv.lock`.
 - [ ] Add a nightly reproduction workflow. It re-runs a rotating sample of committed analyses and fails or opens an issue when a dependency upgrade changes a number. Here: rebuild each experiment's dev-split numbers from committed inputs. Never touch a holdout, because `research/trials.jsonl` refuses a second look.
 - [ ] Deploy on push, with a schedule only as a backstop. Run crons off the top of the hour, because GitHub runs scheduled jobs late or not at all when Actions is busy.
 
